@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import DragMenu from "./DragMenu";
 import ObjectPanel from "./ObjectPanel";
+
 
 type ObjectType = "cube" | "cylinder";
 type CubeParams = { width: number; height: number; depth: number };
@@ -96,6 +97,8 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       renderer.domElement.removeEventListener("click", onClick);
       mountRef.current?.removeChild(renderer.domElement);
     };
+
+
   }, []);
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
@@ -152,24 +155,83 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     setSelected({ ...selected, params: newParams });
   }
 
+  // Save Scene
+  // Save current scene data to JSON
+  const saveScene = useCallback(() => {
+    if (!sceneRef.current) return;
+
+  // Extract objects with type and parameters
+  const objects = sceneRef.current.children
+    .filter((child) => child instanceof THREE.Mesh)
+    .map((mesh) => {
+      const m = mesh as THREE.Mesh;
+      return {
+        type: (m.userData.type as ObjectType) || "unknown",
+        params: m.userData.params || {},
+        position: {
+          x: m.position.x,
+          y: m.position.y,
+          z: m.position.z,
+        },
+        rotation: {
+          x: m.rotation.x,
+          y: m.rotation.y,
+          z: m.rotation.z,
+        },
+      };
+    });
+
+  const sceneData = {
+    projectId,
+    timestamp: new Date().toISOString(),
+    objects,
+  };
+
+  // Later: send to database
+  console.log("Scene saved:", sceneData);
+
+  // Trigger file download
+  const blob = new Blob([JSON.stringify(sceneData, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `scene_${projectId || "untitled"}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  }, [projectId]);
+
+  useEffect(() => {
+  function handleSave() {
+    saveScene();
+  }
+  document.addEventListener("saveScene", handleSave);
+  return () => document.removeEventListener("saveScene", handleSave);
+}, [saveScene]);
+
+
+
   return (
-    <div className="relative flex h-full w-full">
-      <DragMenu onStartDrag={(t) => setDragType(t)} />
-      <div
-        ref={mountRef}
-        className="flex-1 bg-slate-950"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop}
+  <div className="relative flex h-full w-full">
+    
+    <DragMenu onStartDrag={(t: ObjectType) => setDragType(t)} />
+
+    <div
+      ref={mountRef}
+      className="flex-1 bg-slate-950"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
+    />
+
+    {selected && (
+      <ObjectPanel
+        type={selected.type}
+        params={selected.params}
+        transform={transform}
+        onUpdateTransform={updateTransform}
+        onUpdateGeometry={updateGeometry}
       />
-      {selected && (
-        <ObjectPanel
-          type={selected.type}
-          params={selected.params}
-          transform={transform}
-          onUpdateTransform={updateTransform}
-          onUpdateGeometry={updateGeometry}
-        />
-      )}
-    </div>
-  );
+    )}
+  </div>
+);
+
 }
