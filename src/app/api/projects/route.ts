@@ -19,16 +19,43 @@ export async function GET() {
 // POST /api/projects -> create
 export async function POST(req: Request) {
   const body = await req.json();
-  const name = (body.name as string | undefined)?.trim();
-  const description = (body.description as string | undefined)?.trim() ?? "";
+
+  const rawName = body.name;
+  const rawDescription = body.description;
+
+  const name = typeof rawName === "string" ? rawName.trim() : "";
+  const description =
+    typeof rawDescription === "string" ? rawDescription.trim() : "";
+
+  // server-side validácia
 
   if (!name) {
-    return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Name is required." },
+      { status: 400 }
+    );
+  }
+
+  if (name.length < 3 || name.length > 100) {
+    return NextResponse.json(
+      { error: "Name must be between 3 and 100 characters." },
+      { status: 400 }
+    );
+  }
+
+  if (description.length > 500) {
+    return NextResponse.json(
+      { error: "Description must be at most 500 characters." },
+      { status: 400 }
+    );
   }
 
   const { data, error } = await supabase
     .from("projects")
-    .insert({ name, description })
+    .insert({
+      name,
+      description: description || null,
+    })
     .select("*")
     .single();
 
