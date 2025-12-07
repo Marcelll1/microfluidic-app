@@ -1,10 +1,77 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
-export default function UserLayout({ children }: { children: React.ReactNode }) {
+export default function UserLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const path = usePathname();
+  const router = useRouter();
+
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkSession() {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!isMounted) return;
+
+      if (error) {
+        console.error("Error checking session:", error.message);
+        // aj pri error-e pustíme UI, aby si nebol natvrdo zamknutý
+        setCheckingAuth(false);
+        return;
+      }
+
+      if (!data.session) {
+        router.replace("/login");
+      } else {
+        setCheckingAuth(false);
+      }
+    }
+
+    void checkSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    const { error } = await supabase.auth.signOut();
+    setLoggingOut(false);
+
+    if (error) {
+      console.error("Logout error:", error.message);
+      return;
+    }
+
+    router.replace("/login");
+  }
+
+  if (checkingAuth) {
+    return (
+      <div className="app-shell bg-slate-950 text-slate-100">
+        <header className="main-header">
+          <h1 className="main-title">Microfluidic Designer</h1>
+        </header>
+        <main className="flex-1 flex items-center justify-center">
+          <p className="text-sm text-slate-400">
+            Checking authentication…
+          </p>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell bg-slate-950 text-slate-100">
@@ -52,8 +119,12 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
               Save Scene
             </button>
           )}
-          <button className="text-sm text-slate-400 hover:text-red-400">
-            Logout
+          <button
+            onClick={handleLogout}
+            className="text-sm text-slate-400 hover:text-red-400"
+            disabled={loggingOut}
+          >
+            {loggingOut ? "Logging out..." : "Logout"}
           </button>
         </div>
       </header>
