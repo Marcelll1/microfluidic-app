@@ -5,7 +5,7 @@ interface Params {
   params: { id: string };
 }
 
-// GET /api/projects/:id -> načítanie jedného projektu (READ DETAIL)
+// GET /api/projects/:id -> READ
 export async function GET(_req: Request, { params }: Params) {
   const { id } = params;
 
@@ -68,14 +68,14 @@ export async function PATCH(req: Request, { params }: Params) {
       description: description || null,
     })
     .eq("id", id)
-    .select("*"); // bez .single()
+    .select("*");
 
   if (error) {
     console.error("PATCH /projects/:id error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // nič sa neupdatalo -> id nesedí alebo RLS nepustilo
+  
   if (!data || data.length === 0) {
     console.error("PATCH /projects/:id did not update any row", { id });
     return NextResponse.json(
@@ -84,7 +84,7 @@ export async function PATCH(req: Request, { params }: Params) {
     );
   }
 
-  // ak je všetko OK, vrátime prvý aktualizovaný riadok
+
   return NextResponse.json(data[0], { status: 200 });
 }
 

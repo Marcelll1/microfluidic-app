@@ -126,7 +126,7 @@ export default function ProjectsPage() {
     setEditLoading(true);
     setEditingId(id);
 
-    // tu reálne používaš READ DETAIL: GET /api/projects/:id
+    //READ DETAIL: GET /api/projects/:id
     const res = await fetch(`/api/projects/${id}`);
     const data = await res.json();
     setEditLoading(false);
@@ -163,7 +163,7 @@ export default function ProjectsPage() {
     const trimmedName = editName.trim();
     const trimmedDesc = editDescription.trim();
 
-    // tu reálne používaš UPDATE: PATCH /api/projects/:id
+    //UPDATE: PATCH /api/projects/:id
     const res = await fetch(`/api/projects/${editingId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

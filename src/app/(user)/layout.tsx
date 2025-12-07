@@ -26,7 +26,6 @@ export default function UserLayout({
 
       if (error) {
         console.error("Error checking session:", error.message);
-        // aj pri error-e pustíme UI, aby si nebol natvrdo zamknutý
         setCheckingAuth(false);
         return;
       }

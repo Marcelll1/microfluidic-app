@@ -42,7 +42,6 @@ export default function ObjectPanel({
       return;
     }
 
-    // jednoduchý rozsah, aby si tam nedával nezmyselné hodnoty
     if (field !== "rotationY" && (value < -1000 || value > 1000)) {
       setTransformError("Position must be between -1000 and 1000.");
       return;
