@@ -25,6 +25,8 @@ type ObjectParams = CubeParams | CylinderParams;
 type Transform = { x: number; y: number; z: number; rotationY: number };
 type Selected = { mesh: THREE.Mesh; type: ObjectType; params: ObjectParams };
 
+const DEMO_STORAGE_KEY = "demoScene_v1";
+
 /** Snap value to given step (0.1) */
 function snap(value: number, step = 0.1) {
   return Math.round(value / step) * step;
@@ -44,75 +46,108 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     rotationY: 0,
   });
 
-  // This ref tracks currently selected mesh even inside event handlers
   const selectedMeshRef = useRef<THREE.Mesh | null>(null);
-
-  // Flags for dragging
   const isDraggingRef = useRef(false);
 
   /** Create mesh from DB row (used when loading scene) */
-const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
-  let geometry: THREE.BufferGeometry;
+  const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
+    let geometry: THREE.BufferGeometry;
 
-  if (row.type === "cube") {
-    const p = (row.params || {
-      width: 1,
-      height: 1,
-      depth: 1,
-    }) as CubeParams;
+    if (row.type === "cube") {
+      const p = (row.params || {
+        width: 1,
+        height: 1,
+        depth: 1,
+      }) as CubeParams;
 
-    geometry = new THREE.BoxGeometry(p.width, p.height, p.depth);
-    // Move origin to back-left-bottom corner
-    geometry.translate(p.width / 2, p.height / 2, p.depth / 2);
+      geometry = new THREE.BoxGeometry(p.width, p.height, p.depth);
+      geometry.translate(p.width / 2, p.height / 2, p.depth / 2);
+    } else {
+      const p = (row.params || {
+        radiusTop: 0.5,
+        radiusBottom: 0.5,
+        height: 1,
+      }) as CylinderParams;
 
-  } else {
-    const p = (row.params || {
-      radiusTop: 0.5,
-      radiusBottom: 0.5,
-      height: 1,
-    }) as CylinderParams;
+      geometry = new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, 32);
+    }
 
-    geometry = new THREE.CylinderGeometry(
-      p.radiusTop,
-      p.radiusBottom,
-      p.height,
-      32
-    );
-  }
+    const material = new THREE.MeshStandardMaterial({
+      color: row.type === "cube" ? 0x00aaff : 0xffaa00,
+    });
 
-  const material = new THREE.MeshStandardMaterial({
-    color: row.type === "cube" ? 0x00aaff : 0xffaa00,
-  });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(row.pos_x, row.pos_y, row.pos_z);
+    mesh.rotation.y = row.rotation_y;
 
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(row.pos_x, row.pos_y, row.pos_z);
-  mesh.rotation.y = row.rotation_y;
+    mesh.userData = {
+      type: row.type,
+      params: row.params,
+      dbId: row.id, // DÔLEŽITÉ: DB id pre DELETE/PATCH
+    };
 
-  mesh.userData = {
-    type: row.type,
-    params: row.params,
-  };
+    return mesh;
+  }, []);
 
-  return mesh;
-}, []);
-
-  /** Load scene objects from DB once scene is ready */
+  /** Load scene: demo from localStorage OR DB */
   const loadScene = useCallback(async () => {
-    if (!projectId || !sceneRef.current) return;
+    if (!sceneRef.current) return;
 
+    const scene = sceneRef.current;
+
+    // Clear current meshes
+    const meshes = scene.children.filter((c) => c instanceof THREE.Mesh);
+    meshes.forEach((m) => scene.remove(m));
+
+    // DEMO MODE: localStorage
+    if (!projectId) {
+      const raw = localStorage.getItem(DEMO_STORAGE_KEY);
+      if (!raw) return;
+
+      let items: any[] = [];
+      try {
+        items = JSON.parse(raw);
+        if (!Array.isArray(items)) items = [];
+      } catch {
+        items = [];
+      }
+
+      for (const o of items) {
+        const fakeRow: DbObjectRow = {
+          id: crypto.randomUUID(),
+          project_id: "demo",
+          type: (o.type as ObjectType) ?? "cube",
+          pos_x: Number(o.pos_x) || 0,
+          pos_y: Number(o.pos_y) || 0,
+          pos_z: Number(o.pos_z) || 0,
+          rotation_y: Number(o.rotation_y) || 0,
+          params: o.params ?? {},
+        };
+
+        const mesh = createMeshFromRow(fakeRow);
+        // v demo režime nechceme DB id
+        mesh.userData.dbId = undefined;
+        scene.add(mesh);
+      }
+      return;
+    }
+
+    // DB MODE
     try {
       const res = await fetch(`/api/objects?project_id=${projectId}`);
+
       if (!res.ok) {
         const text = await res.text();
         console.error("Failed to load scene:", res.status, res.statusText, text);
         return;
       }
 
-      const data = (await res.json()) as DbObjectRow[];
-
-      const scene = sceneRef.current;
-      const meshes = scene.children.filter((c) => c instanceof THREE.Mesh);
-      meshes.forEach((m) => scene.remove(m));
+      let data: DbObjectRow[] = [];
+      try {
+        data = (await res.json()) as DbObjectRow[];
+      } catch {
+        data = [];
+      }
 
       for (const row of data) {
         const mesh = createMeshFromRow(row);
@@ -123,20 +158,17 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
     }
   }, [projectId, createMeshFromRow]);
 
-  /** Save current scene to DB */
+  /** Save current scene to DB (or to localStorage in demo mode) */
   const saveSceneToDB = useCallback(async () => {
-    if (!projectId || !sceneRef.current) {
-      console.warn("No projectId or scene, nothing to save");
-      return;
-    }
+    if (!sceneRef.current) return;
 
     const objects = sceneRef.current.children
       .filter((c) => c instanceof THREE.Mesh)
       .map((child) => {
         const mesh = child as THREE.Mesh;
         const { x, y, z } = mesh.position;
+
         return {
-          project_id: projectId,
           type: (mesh.userData.type as ObjectType) ?? "cube",
           pos_x: x,
           pos_y: y,
@@ -146,23 +178,46 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
         };
       });
 
+    // DEMO MODE: localStorage
+    if (!projectId) {
+      localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(objects));
+      alert("Demo saved locally (not to database).");
+      return;
+    }
+
+    // DB MODE
     try {
       const res = await fetch("/api/objects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: projectId, objects }),
+        body: JSON.stringify({
+          project_id: projectId,
+          objects: objects.map((o) => ({ ...o, project_id: projectId })),
+        }),
       });
 
-      const json = await res.json();
-      if (!res.ok) {
-        console.error("Save to DB failed:", res.status, res.statusText, json);
-      } else {
-        console.log("Scene saved to DB:", json);
+      let json: any = null;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
       }
+
+      if (!res.ok) {
+        console.error("Save to DB failed:", res.status, json);
+        alert(json?.error ?? "Save failed.");
+        return;
+      }
+
+      console.log("Scene saved to DB:", json);
+
+      // Po save-all sa DB id zmenia (nové insert). Najistejšie je reload.
+      await loadScene();
     } catch (err) {
       console.error("Error while saving to DB:", err);
+      alert("Save failed (network/server error).");
     }
-  }, [projectId]);
+  }, [projectId, loadScene]);
 
   /** Listen to global saveScene event from layout */
   useEffect(() => {
@@ -184,19 +239,40 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
     });
   }, []);
 
-  /** Delete currently selected object */
-  const deleteSelected = useCallback(() => {
+  /** Delete currently selected object (scene + DB when possible) */
+  const deleteSelected = useCallback(async () => {
     if (!selectedMeshRef.current || !sceneRef.current) return;
-    sceneRef.current.remove(selectedMeshRef.current);
+
+    const mesh = selectedMeshRef.current;
+    const dbId = mesh.userData?.dbId as string | undefined;
+
+    sceneRef.current.remove(mesh);
     selectedMeshRef.current = null;
     setSelected(null);
-  }, []);
 
-  /** Keyboard Delete / Backspace removes object */
+    // DB delete len ak existuje dbId (t.j. načítané z DB) a nie sme v demo
+    if (dbId && projectId) {
+      const res = await fetch(`/api/objects/${dbId}`, { method: "DELETE" });
+
+      let json: any = null;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
+      }
+
+      if (!res.ok) {
+        console.error("DB delete failed:", res.status, json);
+        alert(json?.error ?? "Failed to delete object from DB.");
+      }
+    }
+  }, [projectId]);
+
+  /** Keyboard Delete removes object */
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Delete") {
-        deleteSelected();
+        void deleteSelected();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -243,7 +319,6 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
     const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const intersection = new THREE.Vector3();
 
-    /** Helper: pick first mesh under cursor */
     function pickMesh(e: MouseEvent): THREE.Mesh | null {
       if (!sceneRef.current || !cameraRef.current || !mountRef.current) return null;
       const rect = mountRef.current.getBoundingClientRect();
@@ -255,9 +330,7 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
       return hit ? (hit.object as THREE.Mesh) : null;
     }
 
-    /** Single-click: select + highlight + show panel */
     function onClick(e: MouseEvent) {
-      // If we just finished dragging, ignore click
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         return;
@@ -290,18 +363,15 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
       });
     }
 
-    /** Mouse down: start dragging selected mesh */
     function onMouseDown(e: MouseEvent) {
       if (!selectedMeshRef.current) return;
       const hit = pickMesh(e);
       if (hit && hit === selectedMeshRef.current) {
         isDraggingRef.current = true;
-        // disable orbit while dragging
         controls.enabled = false;
       }
     }
 
-    /** Mouse move: drag on ground plane with snap 0.1 */
     function onMouseMove(e: MouseEvent) {
       if (!isDraggingRef.current || !selectedMeshRef.current || !cameraRef.current) return;
 
@@ -324,7 +394,6 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
       }));
     }
 
-    /** Mouse up: finish dragging */
     function onMouseUp() {
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
@@ -332,10 +401,9 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
       }
     }
 
-    /** Wheel + Shift: move object along camera direction with snap 0.1 */
     function onWheel(e: WheelEvent) {
       if (!selectedMeshRef.current || !cameraRef.current) return;
-      if (!e.shiftKey) return; // without Shift, let OrbitControls zoom normally
+      if (!e.shiftKey) return;
 
       e.preventDefault();
 
@@ -343,7 +411,7 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
       const dir = new THREE.Vector3();
       cameraRef.current.getWorldDirection(dir);
 
-      const delta = -Math.sign(e.deltaY) * 0.1; // step 0.1
+      const delta = -Math.sign(e.deltaY) * 0.1;
       mesh.position.addScaledVector(dir, delta);
 
       mesh.position.set(
@@ -374,7 +442,6 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
     }
     animate();
 
-    // After scene is ready, load from DB
     void loadScene();
 
     return () => {
@@ -390,7 +457,7 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
     };
   }, [clearHighlight, loadScene]);
 
-  /** Drag & drop creation of new objects (as before) */
+  /** Drag & drop creation of new objects */
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     if (!sceneRef.current || !cameraRef.current || !mountRef.current || !dragType) return;
@@ -410,18 +477,13 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
     let params: ObjectParams;
 
     if (dragType === "cube") {
-  params = { width: 1, height: 1, depth: 1 };
-
-    // geometry centered around origin
-    geometry = new THREE.BoxGeometry(params.width, params.height, params.depth);
-
-    // shift geometry so (0,0,0) becomes back-left-bottom corner
-    geometry.translate(params.width / 2, params.height / 2, params.depth / 2);
-  } else {
-    params = { radiusTop: 0.5, radiusBottom: 0.5, height: 1 };
-    geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
-  }
-
+      params = { width: 1, height: 1, depth: 1 };
+      geometry = new THREE.BoxGeometry(params.width, params.height, params.depth);
+      geometry.translate(params.width / 2, params.height / 2, params.depth / 2);
+    } else {
+      params = { radiusTop: 0.5, radiusBottom: 0.5, height: 1 };
+      geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
+    }
 
     const material = new THREE.MeshStandardMaterial({
       color: dragType === "cube" ? 0x00aaff : 0xffaa00,
@@ -429,12 +491,10 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
 
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.copy(point);
-    mesh.userData = { type: dragType, params };
-
+    mesh.userData = { type: dragType, params, dbId: undefined };
     sceneRef.current.add(mesh);
   }
 
-  /** Update transform from panel */
   function updateTransform(field: keyof Transform, value: number) {
     if (!selectedMeshRef.current) return;
 
@@ -446,37 +506,36 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
     mesh.rotation.y = next.rotationY;
   }
 
-  /** Update geometry from panel */
   function updateGeometry(newParams: ObjectParams) {
     if (!selected) return;
 
-    let geom: THREE.BufferGeometry;
-
     if (selected.type === "cube") {
-  const p = newParams as CubeParams;
+      const p = newParams as CubeParams;
+      const geom = new THREE.BoxGeometry(p.width, p.height, p.depth);
+      geom.translate(p.width / 2, p.height / 2, p.depth / 2);
+      selected.mesh.geometry.dispose();
+      selected.mesh.geometry = geom;
+    } else {
+      const p = newParams as CylinderParams;
+      const geom = new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, 32);
+      selected.mesh.geometry.dispose();
+      selected.mesh.geometry = geom;
+    }
 
-  let geom = new THREE.BoxGeometry(p.width, p.height, p.depth);
-  // again move origin to back-left-bottom corner
-  geom.translate(p.width / 2, p.height / 2, p.depth / 2);
-
-  selected.mesh.geometry.dispose();
-  selected.mesh.geometry = geom;
-  } else {
-    const p = newParams as CylinderParams;
-    const geom = new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, 32);
-    selected.mesh.geometry.dispose();
-    selected.mesh.geometry = geom;
-  }
-  selected.mesh.userData.params = newParams;
-  setSelected({ ...selected, params: newParams });
+    selected.mesh.userData.params = newParams;
+    setSelected({ ...selected, params: newParams });
   }
 
   return (
     <div className="relative flex h-full w-full">
-      {/* Left menu with draggable primitives */}
+      {!projectId && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1 rounded bg-amber-500 text-slate-900 text-sm">
+          Demo mode – not saved to database
+        </div>
+      )}
+
       <DragMenu onStartDrag={(t: ObjectType) => setDragType(t)} />
 
-      {/* Three.js canvas */}
       <div
         ref={mountRef}
         className="flex-1 bg-slate-950"
@@ -484,7 +543,6 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
         onDrop={handleDrop}
       />
 
-      {/* Right panel for selected object */}
       {selected && (
         <ObjectPanel
           type={selected.type}
@@ -492,7 +550,7 @@ const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
           transform={transform}
           onUpdateTransform={updateTransform}
           onUpdateGeometry={updateGeometry}
-          onDelete={deleteSelected}
+          onDelete={() => void deleteSelected()}
         />
       )}
     </div>

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -25,7 +24,6 @@ export default function RegisterPage() {
     if (!p) return "Password is required.";
     if (p.length < 6) return "Password must be at least 6 characters long.";
     if (p !== pc) return "Passwords do not match.";
-
     return null;
   }
 
@@ -42,20 +40,22 @@ export default function RegisterPage() {
 
     setLoading(true);
 
-    const { data, error: supaError } = await supabase.auth.signUp({
-      email,
-      password,
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim(), password: password.trim() }),
     });
 
+    const data = await res.json().catch(() => ({}));
     setLoading(false);
 
-    if (supaError) {
-      setError(supaError.message);
+    if (!res.ok) {
+      setError(data?.error ?? "Registration failed.");
       return;
     }
 
     setSuccess("Registration successful! Redirecting to login...");
-    setTimeout(() => router.push("/login"), 1500);
+    setTimeout(() => router.push("/login"), 1200);
   }
 
   return (
@@ -64,7 +64,6 @@ export default function RegisterPage() {
         <h1 className="text-xl font-semibold mb-4">Register</h1>
 
         <form onSubmit={handleRegister} className="form-grid">
-
           <div className="form-field">
             <label className="form-field-label" htmlFor="email">
               Email

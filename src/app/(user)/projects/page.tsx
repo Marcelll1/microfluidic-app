@@ -1,351 +1,232 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 
-interface Project {
+type Project = {
   id: string;
   name: string;
   description: string | null;
   created_at: string;
-}
+  owner_email?: string; // iba pre admina
+};
 
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const router = useRouter();
 
-  // create form
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
-  // edit form
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-
-  const [loading, setLoading] = useState(false);
-  const [editLoading, setEditLoading] = useState(false);
-
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
+  /* =========================
+     LOAD PROJECTS
+     ========================= */
   async function loadProjects() {
-    const res = await fetch("/api/projects");
-    const data = await res.json();
-    if (res.ok) {
-      setProjects(data);
-    } else {
-      console.error("Failed to load projects:", data);
-      setError(data.error ?? "Failed to load projects.");
+    setLoading(true);
+
+    let res: Response;
+    try {
+      res = await fetch("/api/projects");
+    } catch (err) {
+      console.error("Network error while loading projects", err);
+      setLoading(false);
+      return;
     }
+
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+
+    if (!res.ok) {
+      console.error("Failed to load projects:", data);
+      setLoading(false);
+      return;
+    }
+
+    setProjects(Array.isArray(data) ? data : []);
+    setLoading(false);
+  }
+
+  /* =========================
+     CREATE PROJECT
+     ========================= */
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!name.trim()) {
+      alert("Project name is required.");
+      return;
+    }
+
+    setCreating(true);
+
+    let res: Response;
+    try {
+      res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim() || null,
+        }),
+      });
+    } catch (err) {
+      console.error("Network error while creating project", err);
+      setCreating(false);
+      return;
+    }
+
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+
+    setCreating(false);
+
+    if (!res.ok) {
+      console.error("Create project failed:", data);
+      alert(data?.error ?? "Create project failed.");
+      return;
+    }
+
+    setName("");
+    setDescription("");
+    await loadProjects();
+  }
+
+  /* =========================
+     DELETE PROJECT
+     ========================= */
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this project?")) return;
+
+    let res: Response;
+    try {
+      res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+    } catch (err) {
+      console.error("Network error while deleting project", err);
+      return;
+    }
+
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+
+    if (!res.ok) {
+      console.error("Delete failed:", data);
+      alert(data?.error ?? "Delete failed.");
+      return;
+    }
+
+    await loadProjects();
+  }
+
+  /* =========================
+     OPEN PROJECT
+     ========================= */
+  function openProject(id: string) {
+    router.push(`/editor?project=${id}`);
   }
 
   useEffect(() => {
     void loadProjects();
   }, []);
 
-  function validateNameAndDescription(
-    n: string,
-    d: string,
-  ): string | null {
-    const trimmedName = n.trim();
-    const trimmedDesc = d.trim();
-
-    if (!trimmedName) {
-      return "Project name is required.";
-    }
-    if (trimmedName.length < 3) {
-      return "Project name must be at least 3 characters long.";
-    }
-    if (trimmedName.length > 100) {
-      return "Project name must be at most 100 characters.";
-    }
-    if (trimmedDesc.length > 500) {
-      return "Description must be at most 500 characters.";
-    }
-    return null;
-  }
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-
-    const validationError = validateNameAndDescription(name, description);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    setLoading(true);
-
-    const trimmedName = name.trim();
-    const trimmedDesc = description.trim();
-
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: trimmedName,
-        description: trimmedDesc || null,
-      }),
-    });
-
-    const data = await res.json();
-    setLoading(false);
-
-    if (!res.ok) {
-      console.error("Create project failed:", data);
-      setError(data.error ?? "Failed to create project.");
-      return;
-    }
-
-    setName("");
-    setDescription("");
-    setSuccess("Project created successfully.");
-    await loadProjects();
-  }
-
-  async function handleDelete(id: string) {
-    setError(null);
-    setSuccess(null);
-    if (!confirm("Delete this project?")) return;
-    const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) {
-      console.error("Delete project failed:", data);
-      setError(data.error ?? "Failed to delete project.");
-      return;
-    }
-    setSuccess("Project deleted.");
-    await loadProjects();
-  }
-
-  async function startEdit(id: string) {
-    setError(null);
-    setSuccess(null);
-    setEditLoading(true);
-    setEditingId(id);
-
-    //READ DETAIL: GET /api/projects/:id
-    const res = await fetch(`/api/projects/${id}`);
-    const data = await res.json();
-    setEditLoading(false);
-
-    if (!res.ok) {
-      console.error("Load project detail failed:", data);
-      setError(data.error ?? "Failed to load project detail.");
-      setEditingId(null);
-      return;
-    }
-
-    setEditName(data.name ?? "");
-    setEditDescription(data.description ?? "");
-  }
-
-  async function handleUpdate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingId) return;
-
-    setError(null);
-    setSuccess(null);
-
-    const validationError = validateNameAndDescription(
-      editName,
-      editDescription,
-    );
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    setEditLoading(true);
-
-    const trimmedName = editName.trim();
-    const trimmedDesc = editDescription.trim();
-
-    //UPDATE: PATCH /api/projects/:id
-    const res = await fetch(`/api/projects/${editingId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: trimmedName,
-        description: trimmedDesc || null,
-      }),
-    });
-
-    const data = await res.json();
-    setEditLoading(false);
-
-    if (!res.ok) {
-      console.error("Update project failed:", data);
-      setError(data.error ?? "Failed to update project.");
-      return;
-    }
-
-    setSuccess("Project updated.");
-    setEditingId(null);
-    setEditName("");
-    setEditDescription("");
-    await loadProjects();
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-    setEditName("");
-    setEditDescription("");
-    setError(null);
-    setSuccess(null);
-  }
-
+  /* =========================
+     RENDER
+     ========================= */
   return (
-    <main className="page page--projects h-[calc(100vh-60px)] w-full text-slate-100">
-      {/* CREATE FORM */}
-      <section className="card card--form">
-        <h2 className="text-lg font-semibold mb-3">Create new project</h2>
+    <main className="page p-6 max-w-5xl mx-auto">
+      <h1 className="text-2xl font-semibold mb-6">Projects</h1>
 
-        <form onSubmit={handleCreate} className="form-grid">
-          <div className="form-field">
-            <label className="form-field-label" htmlFor="name">
-              Project name
-            </label>
-            <input
-              id="name"
-              type="text"
-              placeholder="Project name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="form-input"
-            />
-          </div>
+      {/* CREATE PROJECT */}
+      <section className="card mb-8">
+        <h2 className="text-lg font-medium mb-4">Create new project</h2>
 
-          <div className="form-field">
-            <label className="form-field-label" htmlFor="description">
-              Description (optional)
-            </label>
-            <textarea
-              id="description"
-              placeholder="Short description of the project"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="form-textarea"
-            />
-          </div>
+        <form onSubmit={handleCreate} className="flex flex-col gap-4">
+          <input
+            type="text"
+            placeholder="Project name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="form-input"
+            disabled={creating}
+          />
 
-          {error && !editingId && (
-            <p className="form-error">{error}</p>
-          )}
-          {success && !editingId && (
-            <p className="form-success">{success}</p>
-          )}
+          <textarea
+            placeholder="Description (optional)"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="form-textarea"
+            disabled={creating}
+          />
 
           <button
             type="submit"
-            disabled={loading}
-            className="button-primary mt-1"
+            disabled={creating}
+            className="button-primary self-start"
           >
-            {loading ? "Creating..." : "Create project"}
+            {creating ? "Creating..." : "Create project"}
           </button>
         </form>
       </section>
 
-      {/* EDIT FORM - zobrazuje sa len ak editujeme */}
-      {editingId && (
-        <section className="card card--form">
-          <h2 className="text-lg font-semibold mb-3">
-            Edit project
-          </h2>
+      {/* PROJECT LIST */}
+      <section className="card">
+        <h2 className="text-lg font-medium mb-4">Your projects</h2>
 
-          <form onSubmit={handleUpdate} className="form-grid">
-            <div className="form-field">
-              <label className="form-field-label" htmlFor="edit-name">
-                Project name
-              </label>
-              <input
-                id="edit-name"
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                className="form-input"
-              />
-            </div>
+        {loading && <p className="text-slate-400">Loading projects…</p>}
 
-            <div className="form-field">
-              <label
-                className="form-field-label"
-                htmlFor="edit-description"
-              >
-                Description
-              </label>
-              <textarea
-                id="edit-description"
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                className="form-textarea"
-              />
-            </div>
+        {!loading && projects.length === 0 && (
+          <p className="text-slate-400">No projects yet.</p>
+        )}
 
-            {error && (
-              <p className="form-error">{error}</p>
-            )}
-            {success && (
-              <p className="form-success">{success}</p>
-            )}
-
-            <div className="flex items-center gap-2">
-              <button
-                type="submit"
-                disabled={editLoading}
-                className="button-primary mt-1"
-              >
-                {editLoading ? "Saving..." : "Save changes"}
-              </button>
-              <button
-                type="button"
-                onClick={cancelEdit}
-                className="text-xs text-slate-400 hover:text-slate-200 mt-1"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      {/* LIST PROJECTS */}
-      <section className="card flex-1 overflow-auto">
-        <h2 className="text-lg font-semibold mb-3">Projects</h2>
-        {projects.length === 0 ? (
-          <p className="text-sm text-slate-400">No projects yet.</p>
-        ) : (
-          <ul className="projects-list">
+        {!loading && projects.length > 0 && (
+          <ul className="space-y-3">
             {projects.map((p) => (
-              <li key={p.id} className="projects-item">
-                <div className="projects-item-main">
-                  <span className="projects-item-title">{p.name}</span>
-                  {p.description && (
-                    <span className="projects-item-description">
-                      {p.description}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Link
-                    href={`/editor?project=${p.id}`}
-                    className="button-primary"
-                  >
-                    Open in editor
-                  </Link>
+              <li
+                key={p.id}
+                className="flex items-center justify-between bg-slate-900 rounded px-4 py-3"
+              >
+                <div>
+  <div className="font-medium">{p.name}</div>
+
+  {p.description && (
+    <div className="text-sm text-slate-400">
+      {p.description}
+    </div>
+  )}
+
+  {p.owner_email && (
+    <div className="text-xs text-slate-500 mt-1">
+      Owner: <span className="font-mono">{p.owner_email}</span>
+    </div>
+  )}
+</div>
+
+
+                <div className="flex items-center gap-3">
                   <button
-                    type="button"
-                    onClick={() => startEdit(p.id)}
-                    className="text-xs text-sky-400 hover:text-sky-300"
+                    onClick={() => openProject(p.id)}
+                    className="button-secondary"
                   >
-                    Edit
+                    Open
                   </button>
+
                   <button
-                    type="button"
-                    onClick={() => void handleDelete(p.id)}
-                    className="text-xs text-red-400 hover:text-red-300"
+                    onClick={() => handleDelete(p.id)}
+                    className="text-sm text-red-400 hover:text-red-300"
                   >
                     Delete
                   </button>

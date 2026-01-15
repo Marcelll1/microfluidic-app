@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,15 +23,17 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    const { error: supaError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim(), password }),
     });
 
+    const data = await res.json().catch(() => ({}));
     setLoading(false);
 
-    if (supaError) {
-      setError("Invalid email or password.");
+    if (!res.ok) {
+      setError(data?.error ?? "Invalid email or password.");
       return;
     }
 
@@ -45,7 +46,6 @@ export default function LoginPage() {
         <h1 className="text-xl font-semibold mb-4">Login</h1>
 
         <form onSubmit={handleLogin} className="form-grid">
-
           <div className="form-field">
             <label className="form-field-label" htmlFor="email">
               Email

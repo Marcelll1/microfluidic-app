@@ -1,53 +1,77 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabaseServer";
+import { requireUser } from "@/lib/auth";
 
-// GET /api/projects -> list
 export async function GET() {
+  const auth = await requireUser();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  // ADMIN: všetky projekty + owner email
+  if (auth.user.role === "admin") {
+    const { data, error } = await supabase
+      .from("projects")
+      .select(
+        `
+        id,
+        name,
+        description,
+        created_at,
+        owner_id,
+        users:owner_id (
+          email
+        )
+      `
+      )
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const mapped = (data ?? []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      created_at: p.created_at,
+      owner_id: p.owner_id,
+      owner_email: p.users?.email ?? "unknown",
+    }));
+
+    return NextResponse.json(mapped);
+  }
+
+  // USER: len svoje
   const { data, error } = await supabase
     .from("projects")
-    .select("*")
-    .order("created_at", { ascending: true });
+    .select("id, name, description, created_at")
+    .eq("owner_id", auth.user.id)
+    .order("created_at", { ascending: false });
 
   if (error) {
-    console.error("GET /projects error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json(data ?? []);
 }
 
-// POST /api/projects -> create
 export async function POST(req: Request) {
-  const body = await req.json();
-
-  const rawName = body.name;
-  const rawDescription = body.description;
-
-  const name = typeof rawName === "string" ? rawName.trim() : "";
-  const description =
-    typeof rawDescription === "string" ? rawDescription.trim() : "";
-
-  // server-side validácia
-
-  if (!name) {
-    return NextResponse.json(
-      { error: "Name is required." },
-      { status: 400 }
-    );
+  const auth = await requireUser();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
+  const body = await req.json().catch(() => null);
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const description = typeof body?.description === "string" ? body.description.trim() : "";
+
+  if (!name) return NextResponse.json({ error: "Name is required." }, { status: 400 });
   if (name.length < 3 || name.length > 100) {
-    return NextResponse.json(
-      { error: "Name must be between 3 and 100 characters." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Name must be 3–100 chars." }, { status: 400 });
   }
-
   if (description.length > 500) {
-    return NextResponse.json(
-      { error: "Description must be at most 500 characters." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Description max 500 chars." }, { status: 400 });
   }
 
   const { data, error } = await supabase
@@ -55,14 +79,11 @@ export async function POST(req: Request) {
     .insert({
       name,
       description: description || null,
+      owner_id: auth.user.id,
     })
     .select("*")
     .single();
 
-  if (error) {
-    console.error("POST /projects error:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data, { status: 201 });
 }

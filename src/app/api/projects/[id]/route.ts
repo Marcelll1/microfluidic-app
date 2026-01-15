@@ -1,108 +1,45 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "@/lib/supabaseServer";
+import { requireUser } from "@/lib/auth";
 
-interface Params {
-  params: { id: string };
+type Ctx = { params: { id: string } };
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function canAccessProject(projectId: string) {
+  const auth = await requireUser();
+  if (!auth.ok) return auth;
+
+  const { data: project, error } = await supabase
+    .from("projects")
+    .select("id, owner_id")
+    .eq("id", projectId)
+    .maybeSingle();
+
+  if (error) return { ok: false as const, status: 500 as const, error: error.message };
+  if (!project) return { ok: false as const, status: 404 as const, error: "Project not found" };
+
+  if (auth.user.role !== "admin" && project.owner_id !== auth.user.id) {
+    return { ok: false as const, status: 403 as const, error: "Forbidden" };
+  }
+
+  return { ok: true as const, user: auth.user };
 }
 
-// GET /api/projects/:id -> READ
-export async function GET(_req: Request, { params }: Params) {
-  const { id } = params;
+export async function DELETE(_req: Request, ctx: Ctx) {
+  const id = ctx.params.id;
+  if (!UUID_RE.test(id)) return NextResponse.json({ error: "Invalid project id" }, { status: 400 });
 
-  const { data, error } = await supabase
-    .from("projects")
-    .select("*")
-    .eq("id", id)
-    .single();
+  const access = await canAccessProject(id);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
-  if (error) {
-    console.error("GET /projects/:id error:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  // zmaž aj objekty projektu
+  const { error: delObjErr } = await supabase.from("object3d").delete().eq("project_id", id);
+  if (delObjErr) return NextResponse.json({ error: delObjErr.message }, { status: 500 });
 
-  if (!data) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
-
-  return NextResponse.json(data, { status: 200 });
-}
-
-// PATCH /api/projects/:id -> UPDATE projektu
-export async function PATCH(req: Request, { params }: Params) {
-  const { id } = params;
-  const body = await req.json();
-
-  const rawName = body.name;
-  const rawDescription = body.description;
-
-  const name = typeof rawName === "string" ? rawName.trim() : "";
-  const description =
-    typeof rawDescription === "string" ? rawDescription.trim() : "";
-
-  // rovnaká validácia ako pri POST /api/projects
-  if (!name) {
-    return NextResponse.json(
-      { error: "Name is required." },
-      { status: 400 },
-    );
-  }
-
-  if (name.length < 3 || name.length > 100) {
-    return NextResponse.json(
-      { error: "Name must be between 3 and 100 characters." },
-      { status: 400 },
-    );
-  }
-
-  if (description.length > 500) {
-    return NextResponse.json(
-      { error: "Description must be at most 500 characters." },
-      { status: 400 },
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("projects")
-    .update({
-      name,
-      description: description || null,
-    })
-    .eq("id", id)
-    .select("*");
-
-  if (error) {
-    console.error("PATCH /projects/:id error:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  
-  if (!data || data.length === 0) {
-    console.error("PATCH /projects/:id did not update any row", { id });
-    return NextResponse.json(
-      { error: "Project not found or not updated." },
-      { status: 404 },
-    );
-  }
-
-
-  return NextResponse.json(data[0], { status: 200 });
-}
-
-
-
-// DELETE /api/projects/:id -> zmazanie projektu
-export async function DELETE(_req: Request, { params }: Params) {
-  const { id } = params;
-
-  const { error } = await supabase
-    .from("projects")
-    .delete()
-    .eq("id", id);
-
-  if (error) {
-    console.error("DELETE /projects/:id error:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  const { error: delProjErr } = await supabase.from("projects").delete().eq("id", id);
+  if (delProjErr) return NextResponse.json({ error: delProjErr.message }, { status: 500 });
 
   return NextResponse.json({ success: true }, { status: 200 });
 }
