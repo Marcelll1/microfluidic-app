@@ -1,84 +1,25 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-const SESSION_COOKIE = "session_token";
+export function middleware(req: NextRequest) {
+  const url = req.nextUrl.clone();
+  const token = req.cookies.get("session_token")?.value;
 
-// stránky ktoré vyžadujú login
-const PROTECTED_PREFIXES = ["/projects", "/editor", "/dashboard"];
+  const path = url.pathname;
 
-// admin sekcia
-const ADMIN_PREFIX = "/admin";
+  // chránené stránky vyžadujú session cookie
+  const protectedPaths = ["/projects", "/admin", "/dashboard"];
+  const isProtected = protectedPaths.some((p) => path === p || path.startsWith(p + "/"));
 
-function isProtectedPath(pathname: string) {
-  return PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
-}
-
-export async function middleware(req: NextRequest) {
-  const { pathname, searchParams } = req.nextUrl;
-
-  // nechaj prejsť statické a api
-  if (
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/api") ||
-    pathname === "/favicon.ico"
-  ) {
-    return NextResponse.next();
-  }
-
-  const hasSession = req.cookies.has(SESSION_COOKIE);
-
-  // public povolené
-  if (pathname === "/" || pathname.startsWith("/login") || pathname.startsWith("/register")) {
-    return NextResponse.next();
-  }
-
-  // editor bez project = demo povolené aj bez login
-  if (pathname.startsWith("/editor") && !searchParams.get("project")) {
-    return NextResponse.next();
-  }
-
-  // chránené stránky – vyžadujú cookie
-  if (isProtectedPath(pathname) || pathname.startsWith(ADMIN_PREFIX)) {
-    if (!hasSession) {
-      const url = req.nextUrl.clone();
-      url.pathname = "/login";
-      url.searchParams.set("next", pathname);
-      return NextResponse.redirect(url);
-    }
-  }
-
-  // admin kontrola
-  if (pathname.startsWith(ADMIN_PREFIX)) {
-    try {
-      const meUrl = new URL("/api/auth/me", req.url);
-      const res = await fetch(meUrl, {
-        headers: {
-          cookie: req.headers.get("cookie") ?? "",
-        },
-      });
-
-      if (!res.ok) {
-        const url = req.nextUrl.clone();
-        url.pathname = "/login";
-        url.searchParams.set("next", pathname);
-        return NextResponse.redirect(url);
-      }
-
-      const me = await res.json();
-      if (me.role !== "admin") {
-        const url = req.nextUrl.clone();
-        url.pathname = "/projects";
-        return NextResponse.redirect(url);
-      }
-    } catch {
-      const url = req.nextUrl.clone();
-      url.pathname = "/projects";
-      return NextResponse.redirect(url);
-    }
+  if (isProtected && !token) {
+    url.pathname = "/login";
+    url.search = "";
+    return NextResponse.redirect(url);
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!_next|favicon.ico).*)"],
+  matcher: ["/projects/:path*", "/admin/:path*", "/dashboard/:path*"],
 };

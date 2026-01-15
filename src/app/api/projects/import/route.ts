@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabaseServer";
+import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
 
 export async function POST(req: Request) {
@@ -14,8 +14,7 @@ export async function POST(req: Request) {
   const name = String(body.project.name).slice(0, 200);
   const description = body.project.description ? String(body.project.description).slice(0, 2000) : null;
 
-  // create new project owned by importer
-  const { data: created, error: e1 } = await supabaseServer
+  const { data: created, error: e1 } = await supabase
     .from("projects")
     .insert({ name, description, owner_id: auth.user.id })
     .select("id")
@@ -37,7 +36,7 @@ export async function POST(req: Request) {
   }));
 
   if (rows.length > 0) {
-    const { error: e2 } = await supabaseServer.from("object3d").insert(rows);
+    const { error: e2 } = await supabase.from("object3d").insert(rows);
     if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
   }
 

@@ -8,7 +8,7 @@ type Project = {
   name: string;
   description: string | null;
   created_at: string;
-  owner_email?: string; // iba pre admina
+  owner_email?: string;
 };
 
 type Me = { id: string; email: string; role: "user" | "admin" };
@@ -29,12 +29,18 @@ export default function ProjectsPage() {
     try {
       const res = await fetch("/api/auth/me");
       if (!res.ok) return;
-      const data = (await res.json()) as Me;
-      setMe(data);
+      setMe(await res.json());
     } catch {
       // ignore
     }
   }
+
+  useEffect(() => {
+  if (me?.role === "admin") {
+    router.replace("/admin");
+  }
+}, [me, router]);
+
 
   async function loadProjects() {
     setLoading(true);
@@ -142,6 +148,42 @@ export default function ProjectsPage() {
     router.push(`/editor?project=${id}`);
   }
 
+  async function generatePython(id: string) {
+    const res = await fetch(`/api/projects/${id}/generate-python`, { method: "POST" });
+    let json: any = null;
+    try {
+      json = await res.json();
+    } catch {
+      json = null;
+    }
+
+    if (!res.ok) {
+      console.error("Generate failed:", res.status, json);
+      alert(json?.error ?? "Generate failed.");
+      return;
+    }
+
+    alert(`Generated: ${json.artifact.filename}`);
+    router.push("/dashboard");
+  }
+
+  async function exportProject(id: string) {
+    const res = await fetch(`/api/projects/${id}/export`);
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      alert(`Export failed: ${t}`);
+      return;
+    }
+
+    const blob = new Blob([await res.text()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `project_${id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   useEffect(() => {
     void loadMe();
     void loadProjects();
@@ -149,14 +191,20 @@ export default function ProjectsPage() {
 
   return (
     <main className="page p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold">Projects</h1>
 
-        {me?.role === "admin" && (
-          <a className="button-secondary" href="/admin">
-            Admin dashboard
+        <div className="flex items-center gap-2">
+          <a className="button-secondary" href="/dashboard">
+            Dashboard (downloads)
           </a>
-        )}
+
+          {me?.role === "admin" && (
+            <a className="button-secondary" href="/admin">
+              Admin dashboard
+            </a>
+          )}
+        </div>
       </div>
 
       <section className="card mb-8">
@@ -180,11 +228,7 @@ export default function ProjectsPage() {
             disabled={creating}
           />
 
-          <button
-            type="submit"
-            disabled={creating}
-            className="button-primary self-start"
-          >
+          <button type="submit" disabled={creating} className="button-primary self-start">
             {creating ? "Creating..." : "Create project"}
           </button>
         </form>
@@ -197,42 +241,43 @@ export default function ProjectsPage() {
 
         {loading && <p className="text-slate-400">Loading projects…</p>}
 
-        {!loading && projects.length === 0 && (
-          <p className="text-slate-400">No projects yet.</p>
-        )}
+        {!loading && projects.length === 0 && <p className="text-slate-400">No projects yet.</p>}
 
         {!loading && projects.length > 0 && (
           <ul className="space-y-3">
             {projects.map((p) => (
-              <li
-                key={p.id}
-                className="flex items-center justify-between bg-slate-900 rounded px-4 py-3"
-              >
-                <div>
-                  <div className="font-medium">{p.name}</div>
+              <li key={p.id} className="bg-slate-900 rounded px-4 py-3">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <div className="font-medium">{p.name}</div>
+                    {p.description && <div className="text-sm text-slate-400">{p.description}</div>}
+                    {p.owner_email && (
+                      <div className="text-xs text-slate-500 mt-1">
+                        Owner: <span className="font-mono">{p.owner_email}</span>
+                      </div>
+                    )}
+                  </div>
 
-                  {p.description && (
-                    <div className="text-sm text-slate-400">{p.description}</div>
-                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button onClick={() => openProject(p.id)} className="button-secondary">
+                      Open
+                    </button>
 
-                  {p.owner_email && (
-                    <div className="text-xs text-slate-500 mt-1">
-                      Owner: <span className="font-mono">{p.owner_email}</span>
-                    </div>
-                  )}
-                </div>
+                    <button onClick={() => generatePython(p.id)} className="button-secondary">
+                      Generate code
+                    </button>
 
-                <div className="flex items-center gap-3">
-                  <button onClick={() => openProject(p.id)} className="button-secondary">
-                    Open
-                  </button>
+                    <button onClick={() => exportProject(p.id)} className="button-secondary">
+                      Export JSON
+                    </button>
 
-                  <button
-                    onClick={() => handleDelete(p.id)}
-                    className="text-sm text-red-400 hover:text-red-300"
-                  >
-                    Delete
-                  </button>
+                    <button
+                      onClick={() => handleDelete(p.id)}
+                      className="text-sm text-red-400 hover:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </li>
             ))}
