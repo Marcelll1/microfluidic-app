@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 type Ctx = { params: { id: string } };
 
@@ -34,12 +35,18 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   const access = await canAccessProject(id);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
-  // zmaž aj objekty projektu
   const { error: delObjErr } = await supabase.from("object3d").delete().eq("project_id", id);
   if (delObjErr) return NextResponse.json({ error: delObjErr.message }, { status: 500 });
 
   const { error: delProjErr } = await supabase.from("projects").delete().eq("id", id);
   if (delProjErr) return NextResponse.json({ error: delProjErr.message }, { status: 500 });
+
+  await logAudit({
+    user_id: access.user.id,
+    action: "delete",
+    entity: "project",
+    entity_id: id,
+  });
 
   return NextResponse.json({ success: true }, { status: 200 });
 }

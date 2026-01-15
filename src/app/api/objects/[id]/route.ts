@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 type Ctx = { params: { id: string } };
 
@@ -33,7 +34,7 @@ async function canAccessObject(objectId: string) {
     return { ok: false as const, status: 403 as const, error: "Forbidden" };
   }
 
-  return { ok: true as const };
+  return { ok: true as const, user: auth.user, projectId: obj.project_id };
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
@@ -74,6 +75,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAudit({
+    user_id: access.user.id,
+    action: "update",
+    entity: "object3d",
+    entity_id: id,
+    meta: { project_id: access.projectId, fields: Object.keys(patch) },
+  });
+
   return NextResponse.json(data, { status: 200 });
 }
 
@@ -86,6 +96,14 @@ export async function DELETE(_req: Request, ctx: Ctx) {
 
   const { error } = await supabase.from("object3d").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAudit({
+    user_id: access.user.id,
+    action: "delete",
+    entity: "object3d",
+    entity_id: id,
+    meta: { project_id: access.projectId },
+  });
 
   return NextResponse.json({ success: true }, { status: 200 });
 }

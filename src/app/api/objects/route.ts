@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -80,6 +81,14 @@ export async function POST(req: Request) {
 
   const { error: insError } = await supabase.from("object3d").insert(normalized);
   if (insError) return NextResponse.json({ error: insError.message }, { status: 500 });
+
+  await logAudit({
+    user_id: access.user.id,
+    action: "save_scene",
+    entity: "project",
+    entity_id: projectId,
+    meta: { objectsCount: normalized.length },
+  });
 
   return NextResponse.json({ success: true }, { status: 200 });
 }

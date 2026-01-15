@@ -11,8 +11,12 @@ type Project = {
   owner_email?: string; // iba pre admina
 };
 
+type Me = { id: string; email: string; role: "user" | "admin" };
+
 export default function ProjectsPage() {
   const router = useRouter();
+
+  const [me, setMe] = useState<Me | null>(null);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,9 +25,17 @@ export default function ProjectsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
 
-  /* =========================
-     LOAD PROJECTS
-     ========================= */
+  async function loadMe() {
+    try {
+      const res = await fetch("/api/auth/me");
+      if (!res.ok) return;
+      const data = (await res.json()) as Me;
+      setMe(data);
+    } catch {
+      // ignore
+    }
+  }
+
   async function loadProjects() {
     setLoading(true);
 
@@ -53,9 +65,6 @@ export default function ProjectsPage() {
     setLoading(false);
   }
 
-  /* =========================
-     CREATE PROJECT
-     ========================= */
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
 
@@ -102,9 +111,6 @@ export default function ProjectsPage() {
     await loadProjects();
   }
 
-  /* =========================
-     DELETE PROJECT
-     ========================= */
   async function handleDelete(id: string) {
     if (!confirm("Delete this project?")) return;
 
@@ -132,25 +138,27 @@ export default function ProjectsPage() {
     await loadProjects();
   }
 
-  /* =========================
-     OPEN PROJECT
-     ========================= */
   function openProject(id: string) {
     router.push(`/editor?project=${id}`);
   }
 
   useEffect(() => {
+    void loadMe();
     void loadProjects();
   }, []);
 
-  /* =========================
-     RENDER
-     ========================= */
   return (
     <main className="page p-6 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-6">Projects</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-semibold">Projects</h1>
 
-      {/* CREATE PROJECT */}
+        {me?.role === "admin" && (
+          <a className="button-secondary" href="/admin">
+            Admin dashboard
+          </a>
+        )}
+      </div>
+
       <section className="card mb-8">
         <h2 className="text-lg font-medium mb-4">Create new project</h2>
 
@@ -182,9 +190,10 @@ export default function ProjectsPage() {
         </form>
       </section>
 
-      {/* PROJECT LIST */}
       <section className="card">
-        <h2 className="text-lg font-medium mb-4">Your projects</h2>
+        <h2 className="text-lg font-medium mb-4">
+          {me?.role === "admin" ? "All projects" : "Your projects"}
+        </h2>
 
         {loading && <p className="text-slate-400">Loading projects…</p>}
 
@@ -200,27 +209,21 @@ export default function ProjectsPage() {
                 className="flex items-center justify-between bg-slate-900 rounded px-4 py-3"
               >
                 <div>
-  <div className="font-medium">{p.name}</div>
+                  <div className="font-medium">{p.name}</div>
 
-  {p.description && (
-    <div className="text-sm text-slate-400">
-      {p.description}
-    </div>
-  )}
+                  {p.description && (
+                    <div className="text-sm text-slate-400">{p.description}</div>
+                  )}
 
-  {p.owner_email && (
-    <div className="text-xs text-slate-500 mt-1">
-      Owner: <span className="font-mono">{p.owner_email}</span>
-    </div>
-  )}
-</div>
-
+                  {p.owner_email && (
+                    <div className="text-xs text-slate-500 mt-1">
+                      Owner: <span className="font-mono">{p.owner_email}</span>
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => openProject(p.id)}
-                    className="button-secondary"
-                  >
+                  <button onClick={() => openProject(p.id)} className="button-secondary">
                     Open
                   </button>
 
