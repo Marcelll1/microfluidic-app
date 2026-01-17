@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
   const token = generateToken(32);
   const tokenHash = sha256(token);
-  const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 dní
+  const expires = new Date(Date.now() + 60 * 60 * 1000); //1 hodina
 
   const { error: sErr } = await supabase.from("sessions").insert({
     user_id: user.id,
