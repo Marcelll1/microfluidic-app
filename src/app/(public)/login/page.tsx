@@ -23,14 +23,26 @@ export default function LoginPage() {
   const [rcPass2, setRcPass2] = useState("");
   const [resetting, setResetting] = useState(false);
 
+  function isValidEmail(v: string) {
+    const s = v.trim();
+    return s.length >= 3 && s.includes("@") && s.includes(".");
+  }
+
   async function login(e: React.FormEvent) {
     e.preventDefault();
+
+    const e2 = email.trim();
+    if (!e2) return alert("Email is required.");
+    if (!isValidEmail(e2)) return alert("Email is invalid.");
+    if (!password) return alert("Password is required.");
+    if (password.length < 6) return alert("Password must be at least 6 characters.");
+
     setLogging(true);
 
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim(), password }),
+      body: JSON.stringify({ email: e2, password }),
     });
 
     const json = await res.json().catch(() => null);
@@ -41,19 +53,22 @@ export default function LoginPage() {
       return;
     }
 
-    // po prihlásení bežný user ide na /projects
-    // admin layout sám presmeruje na /admin keď príde do user časti
     router.push("/projects");
   }
 
   async function requestForgot(e: React.FormEvent) {
     e.preventDefault();
+
+    const e2 = fpEmail.trim();
+    if (!e2) return alert("Email is required.");
+    if (!isValidEmail(e2)) return alert("Email is invalid.");
+
     setSending(true);
 
     await fetch("/api/auth/forgot-request", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: fpEmail.trim(), note: fpNote.trim() || null }),
+      body: JSON.stringify({ email: e2, note: fpNote.trim() || null }),
     }).catch(() => null);
 
     setSending(false);
@@ -64,14 +79,16 @@ export default function LoginPage() {
   async function setPasswordWithCode(e: React.FormEvent) {
     e.preventDefault();
 
-    if (rcPass1.length < 8) {
-      alert("New password must be at least 8 characters.");
-      return;
-    }
-    if (rcPass1 !== rcPass2) {
-      alert("Passwords do not match.");
-      return;
-    }
+    const e2 = rcEmail.trim();
+    const c2 = rcCode.trim();
+
+    if (!e2) return alert("Email is required.");
+    if (!isValidEmail(e2)) return alert("Email is invalid.");
+    if (!c2) return alert("Reset code is required.");
+
+    if (!rcPass1) return alert("New password is required.");
+    if (rcPass1.length < 6) return alert("New password must be at least 6 characters.");
+    if (rcPass1 !== rcPass2) return alert("Passwords do not match.");
 
     setResetting(true);
 
@@ -79,8 +96,8 @@ export default function LoginPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        email: rcEmail.trim(),
-        reset_code: rcCode.trim(),
+        email: e2,
+        reset_code: c2,
         new_password: rcPass1,
       }),
     });
@@ -118,7 +135,7 @@ export default function LoginPage() {
             <input
               className="form-input"
               type="password"
-              placeholder="Password"
+              placeholder="Password (min 6)"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={logging}
@@ -181,7 +198,7 @@ export default function LoginPage() {
             <input
               className="form-input"
               type="password"
-              placeholder="New password (min 8)"
+              placeholder="New password (min 6)"
               value={rcPass1}
               onChange={(e) => setRcPass1(e.target.value)}
               disabled={resetting}

@@ -1,36 +1,36 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { supabase } from "@/lib/supabaseServer";
-import crypto from "crypto";
-import bcrypt from "bcryptjs";
+import { hashPassword, sha256 } from "@/lib/security";
 
-function hashCode(code: string) {
-  return crypto.createHash("sha256").update(code).digest("hex");
-}
+const Schema = z.object({
+  email: z.string().email().max(200),
+  reset_code: z.string().min(1).max(200),
+  new_password: z.string().min(6).max(200),
+});
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
+  const parsed = Schema.safeParse(body);
 
-  const email = body?.email;
-  const reset_code = body?.reset_code;
-  const new_password = body?.new_password;
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid input." }, { status: 400 });
+  }
 
-  if (typeof email !== "string" || typeof reset_code !== "string" || typeof new_password !== "string") {
-    return NextResponse.json({ error: "Missing fields" }, { status: 400 });
-  }
-  if (new_password.length < 8) {
-    return NextResponse.json({ error: "Password must be at least 8 chars" }, { status: 400 });
-  }
+  const email = parsed.data.email.toLowerCase().trim();
+  const reset_code = parsed.data.reset_code.trim();
+  const new_password = parsed.data.new_password;
 
   const { data: user, error: e1 } = await supabase
     .from("users")
     .select("id")
-    .eq("email", email.trim())
+    .eq("email", email)
     .maybeSingle();
 
   if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-  const codeHash = hashCode(reset_code.trim());
+  const codeHash = sha256(reset_code);
 
   const { data: reqRow, error: e2 } = await supabase
     .from("password_reset_requests")
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid reset code" }, { status: 400 });
   }
 
-  const password_hash = await bcrypt.hash(new_password, 10);
+  const password_hash = await hashPassword(new_password);
 
   const { error: e3 } = await supabase
     .from("users")

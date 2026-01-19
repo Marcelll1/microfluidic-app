@@ -41,14 +41,10 @@ export default function DashboardPage() {
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
 
-    if (newPass1.length < 8) {
-      alert("New password must be at least 8 characters.");
-      return;
-    }
-    if (newPass1 !== newPass2) {
-      alert("New passwords do not match.");
-      return;
-    }
+    if (!oldPass) return alert("Old password is required.");
+    if (!newPass1) return alert("New password is required.");
+    if (newPass1.length < 6) return alert("New password must be at least 6 characters.");
+    if (newPass1 !== newPass2) return alert("New passwords do not match.");
 
     setSaving(true);
     const res = await fetch("/api/auth/change-password", {
@@ -99,7 +95,7 @@ export default function DashboardPage() {
           <input
             className="form-input"
             type="password"
-            placeholder="New password (min 8)"
+            placeholder="New password (min 6)"
             value={newPass1}
             onChange={(e) => setNewPass1(e.target.value)}
             disabled={saving}

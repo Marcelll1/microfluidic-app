@@ -3,11 +3,14 @@ import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
 import { generatePythonBoundaries } from "@/lib/pythonBoundaries";
 
-export async function POST(_: Request, { params }: { params: { id: string } }) {
+export async function POST(
+  _: Request,
+  { params }: { params: { id: string } | Promise<{ id: string }> }
+) {
   const auth = await requireUser();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const projectId = params.id;
+  const { id: projectId } = await params;
 
   const { data: project, error: e1 } = await supabase
     .from("projects")

@@ -6,7 +6,7 @@ import { authCookie } from "@/lib/auth";
 
 const Schema = z.object({
   email: z.string().email().max(200),
-  password: z.string().min(1).max(200),
+  password: z.string().min(6).max(200),
 });
 
 export async function POST(req: Request) {
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
   const token = generateToken(32);
   const tokenHash = sha256(token);
-  const expires = new Date(Date.now() + 60 * 60 * 1000); //1 hodina
+  const expires = new Date(Date.now() + 60 * 60 * 1000);
 
   const { error: sErr } = await supabase.from("sessions").insert({
     user_id: user.id,

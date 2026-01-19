@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function canAccessProject(projectId: string) {
   const auth = await requireUser();
@@ -26,13 +26,26 @@ async function canAccessProject(projectId: string) {
   return { ok: true as const, user: auth.user };
 }
 
+const ObjectSchema = z.object({
+  type: z.union([z.string().min(1), z.null(), z.undefined()]).transform((v) => (v ?? "")),
+  pos_x: z.number(),
+  pos_y: z.number(),
+  pos_z: z.number(),
+  rotation_y: z.number(),
+  params: z.any().optional(),
+});
+
+const SaveSchema = z.object({
+  project_id: z.string().regex(UUID_RE, "Invalid project_id"),
+  objects: z.array(ObjectSchema),
+});
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("project_id");
 
   if (!projectId) return NextResponse.json({ error: "Missing project_id" }, { status: 400 });
-  if (!UUID_RE.test(projectId))
-    return NextResponse.json({ error: "Invalid project_id" }, { status: 400 });
+  if (!UUID_RE.test(projectId)) return NextResponse.json({ error: "Invalid project_id" }, { status: 400 });
 
   const access = await canAccessProject(projectId);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
@@ -49,38 +62,35 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
-  if (!body || typeof body !== "object") {
+  const parsed = SaveSchema.safeParse(body);
+
+  if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  const projectId = (body as any).project_id;
-  const objects = (body as any).objects;
-
-  if (typeof projectId !== "string" || !UUID_RE.test(projectId)) {
-    return NextResponse.json({ error: "Invalid project_id" }, { status: 400 });
-  }
-  if (!Array.isArray(objects)) {
-    return NextResponse.json({ error: "Invalid objects" }, { status: 400 });
-  }
+  const projectId = parsed.data.project_id;
+  const objects = parsed.data.objects;
 
   const access = await canAccessProject(projectId);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
-  const normalized = objects.map((o: any) => ({
+  const normalized = objects.map((o) => ({
     project_id: projectId,
-    type: o?.type,
-    pos_x: o?.pos_x,
-    pos_y: o?.pos_y,
-    pos_z: o?.pos_z,
-    rotation_y: o?.rotation_y,
-    params: o?.params ?? {},
+    type: o.type,
+    pos_x: o.pos_x,
+    pos_y: o.pos_y,
+    pos_z: o.pos_z,
+    rotation_y: o.rotation_y,
+    params: o.params ?? {},
   }));
 
   const { error: delError } = await supabase.from("object3d").delete().eq("project_id", projectId);
   if (delError) return NextResponse.json({ error: delError.message }, { status: 500 });
 
-  const { error: insError } = await supabase.from("object3d").insert(normalized);
-  if (insError) return NextResponse.json({ error: insError.message }, { status: 500 });
+  if (normalized.length > 0) {
+    const { error: insError } = await supabase.from("object3d").insert(normalized);
+    if (insError) return NextResponse.json({ error: insError.message }, { status: 500 });
+  }
 
   await logAudit({
     user_id: access.user.id,

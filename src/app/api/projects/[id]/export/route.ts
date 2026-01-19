@@ -2,15 +2,18 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(
+  _: Request,
+  { params }: { params: { id: string } | Promise<{ id: string }> }
+) {
   const auth = await requireUser();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const projectId = params.id;
+  const { id: projectId } = await params;
 
   const { data: project, error: e1 } = await supabase
     .from("projects")
-    .select("id,name,description,created_at,owner_id")
+    .select("id,owner_id,name,description,created_at")
     .eq("id", projectId)
     .maybeSingle();
 
@@ -23,15 +26,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   const { data: objects, error: e2 } = await supabase
     .from("object3d")
-    .select("type,pos_x,pos_y,pos_z,rotation_y,params,created_at")
+    .select("*")
     .eq("project_id", projectId)
     .order("created_at", { ascending: true });
 
   if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
 
-  return NextResponse.json({
-    exported_at: new Date().toISOString(),
-    project: { name: project.name, description: project.description },
-    objects: objects ?? [],
-  });
+  return NextResponse.json({ project, objects: objects ?? [] });
 }
