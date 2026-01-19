@@ -4,8 +4,10 @@ import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// kontrola prístupu k projektu
 async function canAccessProject(projectId: string) {
   const auth = await requireUser();
   if (!auth.ok) return auth;
@@ -26,6 +28,7 @@ async function canAccessProject(projectId: string) {
   return { ok: true as const, user: auth.user };
 }
 
+// validácia objektu (pre SAVE celej scény)
 const ObjectSchema = z.object({
   type: z.union([z.string().min(1), z.null(), z.undefined()]).transform((v) => (v ?? "")),
   pos_x: z.number(),
@@ -40,6 +43,8 @@ const SaveSchema = z.object({
   objects: z.array(ObjectSchema),
 });
 
+// READ
+// vráti všetky objekty pre projekt
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("project_id");
@@ -60,6 +65,8 @@ export async function GET(req: Request) {
   return NextResponse.json(data ?? []);
 }
 
+// UPDATE (save scene)
+// uloží celú scénu: zmaže staré a vloží nové (bulk replace)
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const parsed = SaveSchema.safeParse(body);
@@ -84,9 +91,11 @@ export async function POST(req: Request) {
     params: o.params ?? {},
   }));
 
+  // DELETE (bulk) – zmaže všetky objekty projektu
   const { error: delError } = await supabase.from("object3d").delete().eq("project_id", projectId);
   if (delError) return NextResponse.json({ error: delError.message }, { status: 500 });
 
+  // CREATE (bulk) – vloží nové objekty
   if (normalized.length > 0) {
     const { error: insError } = await supabase.from("object3d").insert(normalized);
     if (insError) return NextResponse.json({ error: insError.message }, { status: 500 });

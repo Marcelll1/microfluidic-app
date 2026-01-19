@@ -3,11 +3,14 @@ import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
+// READ
+// - user: vráti len jeho projekty
+// - admin: vráti všetky projekty + owner email
 export async function GET() {
   const auth = await requireUser();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  // ADMIN: všetko + owner email
+  // READ (admin)
   if (auth.user.role === "admin") {
     const { data, error } = await supabase
       .from("projects")
@@ -39,7 +42,7 @@ export async function GET() {
     return NextResponse.json(mapped);
   }
 
-  // USER: len svoje
+  // READ (user)
   const { data, error } = await supabase
     .from("projects")
     .select("id, name, description, created_at")
@@ -50,6 +53,8 @@ export async function GET() {
   return NextResponse.json(data ?? []);
 }
 
+// CREATE
+// vytvorí nový projekt pre prihláseného používateľa
 export async function POST(req: Request) {
   const auth = await requireUser();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -58,6 +63,7 @@ export async function POST(req: Request) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const description = typeof body?.description === "string" ? body.description.trim() : "";
 
+  // validácia vstupu
   if (!name) return NextResponse.json({ error: "Name is required." }, { status: 400 });
   if (name.length < 3 || name.length > 100)
     return NextResponse.json({ error: "Name must be 3–100 chars." }, { status: 400 });
