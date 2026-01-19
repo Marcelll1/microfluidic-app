@@ -27,7 +27,7 @@ type Selected = { mesh: THREE.Mesh; type: ObjectType; params: ObjectParams };
 
 const DEMO_STORAGE_KEY = "demoScene_v1";
 
-/** Snap value to given step (0.1) */
+// helper
 function snap(value: number, step = 0.1) {
   return Math.round(value / step) * step;
 }
@@ -49,26 +49,71 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
   const selectedMeshRef = useRef<THREE.Mesh | null>(null);
   const isDraggingRef = useRef(false);
 
-  /** Create mesh from DB row (used when loading scene) */
+  const patchTimerRef = useRef<number | null>(null);
+
+  // CREATE - vytvorí 1 objekt v DB a vráti jeho id
+  const createObjectInDB = useCallback(
+    async (payload: {
+      project_id: string;
+      type: ObjectType;
+      pos_x: number;
+      pos_y: number;
+      pos_z: number;
+      rotation_y: number;
+      params: any;
+    }) => {
+      const res = await fetch("/api/objects/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error ?? "CREATE failed");
+      return json as { id: string };
+    },
+    []
+  );
+
+  // UPDATE - upraví 1 objekt v DB (debounce, aby sa to nespamovalo pri drag)
+  const patchObjectInDB = useCallback(async (dbId: string, patch: any) => {
+    const res = await fetch(`/api/objects/${dbId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      console.error("UPDATE failed:", res.status, json);
+    }
+  }, []);
+
+  // UPDATE - debounce wrapper
+  const patchSelectedDebounced = useCallback(
+    (patch: any) => {
+      const mesh = selectedMeshRef.current;
+      const dbId = (mesh?.userData?.dbId as string | undefined) ?? undefined;
+      if (!mesh || !dbId || !projectId) return;
+
+      if (patchTimerRef.current) window.clearTimeout(patchTimerRef.current);
+      patchTimerRef.current = window.setTimeout(() => {
+        void patchObjectInDB(dbId, patch);
+      }, 250);
+    },
+    [patchObjectInDB, projectId]
+  );
+
+  // helper - vytvor mesh z DB row
   const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Mesh => {
     let geometry: THREE.BufferGeometry;
 
     if (row.type === "cube") {
-      const p = (row.params || {
-        width: 1,
-        height: 1,
-        depth: 1,
-      }) as CubeParams;
-
+      const p = (row.params || { width: 1, height: 1, depth: 1 }) as CubeParams;
       geometry = new THREE.BoxGeometry(p.width, p.height, p.depth);
       geometry.translate(p.width / 2, p.height / 2, p.depth / 2);
     } else {
-      const p = (row.params || {
-        radiusTop: 0.5,
-        radiusBottom: 0.5,
-        height: 1,
-      }) as CylinderParams;
-
+      const p = (row.params || { radiusTop: 0.5, radiusBottom: 0.5, height: 1 }) as CylinderParams;
       geometry = new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, 32);
     }
 
@@ -83,23 +128,21 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     mesh.userData = {
       type: row.type,
       params: row.params,
-      dbId: row.id, // DÔLEŽITÉ: DB id pre DELETE/PATCH
+      dbId: row.id,
     };
 
     return mesh;
   }, []);
 
-  /** Load scene: demo from localStorage OR DB */
+  // READ - load scene (demo localStorage alebo DB)
   const loadScene = useCallback(async () => {
     if (!sceneRef.current) return;
-
     const scene = sceneRef.current;
 
-    // Clear current meshes
     const meshes = scene.children.filter((c) => c instanceof THREE.Mesh);
     meshes.forEach((m) => scene.remove(m));
 
-    // DEMO MODE: localStorage
+    // DEMO
     if (!projectId) {
       const raw = localStorage.getItem(DEMO_STORAGE_KEY);
       if (!raw) return;
@@ -125,40 +168,34 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         };
 
         const mesh = createMeshFromRow(fakeRow);
-        // v demo režime nechceme DB id
         mesh.userData.dbId = undefined;
         scene.add(mesh);
       }
       return;
     }
 
-    // DB MODE
+    // DB - READ
+    const res = await fetch(`/api/objects?project_id=${projectId}`);
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("READ failed:", res.status, res.statusText, text);
+      return;
+    }
+
+    let data: DbObjectRow[] = [];
     try {
-      const res = await fetch(`/api/objects?project_id=${projectId}`);
+      data = (await res.json()) as DbObjectRow[];
+    } catch {
+      data = [];
+    }
 
-      if (!res.ok) {
-        const text = await res.text();
-        console.error("Failed to load scene:", res.status, res.statusText, text);
-        return;
-      }
-
-      let data: DbObjectRow[] = [];
-      try {
-        data = (await res.json()) as DbObjectRow[];
-      } catch {
-        data = [];
-      }
-
-      for (const row of data) {
-        const mesh = createMeshFromRow(row);
-        scene.add(mesh);
-      }
-    } catch (err) {
-      console.error("Error while loading scene:", err);
+    for (const row of data) {
+      const mesh = createMeshFromRow(row);
+      scene.add(mesh);
     }
   }, [projectId, createMeshFromRow]);
 
-  /** Save current scene to DB (or to localStorage in demo mode) */
+  // UPDATE (bulk save scene) - nechávam ako tvoju "Save" funkcionalitu
   const saveSceneToDB = useCallback(async () => {
     if (!sceneRef.current) return;
 
@@ -167,7 +204,6 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       .map((child) => {
         const mesh = child as THREE.Mesh;
         const { x, y, z } = mesh.position;
-
         return {
           type: (mesh.userData.type as ObjectType) ?? "cube",
           pos_x: x,
@@ -178,48 +214,32 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         };
       });
 
-    // DEMO MODE: localStorage
     if (!projectId) {
       localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(objects));
       alert("Demo saved locally (not to database).");
       return;
     }
 
-    // DB MODE
-    try {
-      const res = await fetch("/api/objects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          project_id: projectId,
-          objects: objects.map((o) => ({ ...o, project_id: projectId })),
-        }),
-      });
+    const res = await fetch("/api/objects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_id: projectId,
+        objects: objects.map((o) => ({ ...o, project_id: projectId })),
+      }),
+    });
 
-      let json: any = null;
-      try {
-        json = await res.json();
-      } catch {
-        json = null;
-      }
-
-      if (!res.ok) {
-        console.error("Save to DB failed:", res.status, json);
-        alert(json?.error ?? "Save failed.");
-        return;
-      }
-
-      console.log("Scene saved to DB:", json);
-
-      // Po save-all sa DB id zmenia (nové insert). Najistejšie je reload.
-      await loadScene();
-    } catch (err) {
-      console.error("Error while saving to DB:", err);
-      alert("Save failed (network/server error).");
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      console.error("SAVE scene failed:", res.status, json);
+      alert(json?.error ?? "Save failed.");
+      return;
     }
+
+    await loadScene();
   }, [projectId, loadScene]);
 
-  /** Listen to global saveScene event from layout */
+  // global save event
   useEffect(() => {
     function handleSave() {
       void saveSceneToDB();
@@ -228,7 +248,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     return () => document.removeEventListener("saveScene", handleSave);
   }, [saveSceneToDB]);
 
-  /** Clear emissive highlight from all meshes */
+  // helper
   const clearHighlight = useCallback(() => {
     if (!sceneRef.current) return;
     sceneRef.current.children.forEach((child) => {
@@ -239,7 +259,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     });
   }, []);
 
-  /** Delete currently selected object (scene + DB when possible) */
+  // DELETE - delete selected (lokálne + DB ak dbId existuje)
   const deleteSelected = useCallback(async () => {
     if (!selectedMeshRef.current || !sceneRef.current) return;
 
@@ -250,51 +270,36 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     selectedMeshRef.current = null;
     setSelected(null);
 
-    // DB delete len ak existuje dbId (t.j. načítané z DB) a nie sme v demo
+    // DELETE
     if (dbId && projectId) {
       const res = await fetch(`/api/objects/${dbId}`, { method: "DELETE" });
-
-      let json: any = null;
-      try {
-        json = await res.json();
-      } catch {
-        json = null;
-      }
-
+      const json = await res.json().catch(() => null);
       if (!res.ok) {
-        console.error("DB delete failed:", res.status, json);
+        console.error("DELETE failed:", res.status, json);
         alert(json?.error ?? "Failed to delete object from DB.");
       }
     }
   }, [projectId]);
 
-  /** Keyboard Delete removes object */
+  // keyboard Delete
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Delete") {
-        void deleteSelected();
-      }
+      if (e.key === "Delete") void deleteSelected();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [deleteSelected]);
 
-  /** Main Three.js setup and mouse interactions */
+  // Three.js setup
   useEffect(() => {
     if (!mountRef.current) return;
-
     const mount = mountRef.current;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1d25);
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      mount.clientWidth / mount.clientHeight,
-      0.1,
-      1000
-    );
+    const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 1000);
     camera.position.set(5, 5, 5);
     cameraRef.current = camera;
 
@@ -387,17 +392,25 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       const mesh = selectedMeshRef.current;
       mesh.position.set(snappedX, mesh.position.y, snappedZ);
 
-      setTransform((prev) => ({
-        ...prev,
-        x: snappedX,
-        z: snappedZ,
-      }));
+      setTransform((prev) => ({ ...prev, x: snappedX, z: snappedZ }));
     }
 
     function onMouseUp() {
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         controls.enabled = true;
+
+        // UPDATE - po skončení drag pošli pozíciu do DB (debounce wrapper)
+        const mesh = selectedMeshRef.current;
+        const dbId = mesh?.userData?.dbId as string | undefined;
+        if (mesh && dbId && projectId) {
+          patchSelectedDebounced({
+            pos_x: mesh.position.x,
+            pos_y: mesh.position.y,
+            pos_z: mesh.position.z,
+            rotation_y: mesh.rotation.y,
+          });
+        }
       }
     }
 
@@ -426,6 +439,17 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         z: mesh.position.z,
         rotationY: mesh.rotation.y,
       });
+
+      // UPDATE - wheel transform do DB
+      const dbId = mesh.userData?.dbId as string | undefined;
+      if (dbId && projectId) {
+        patchSelectedDebounced({
+          pos_x: mesh.position.x,
+          pos_y: mesh.position.y,
+          pos_z: mesh.position.z,
+          rotation_y: mesh.rotation.y,
+        });
+      }
     }
 
     renderer.domElement.addEventListener("click", onClick);
@@ -455,46 +479,81 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       sceneRef.current = null;
       cameraRef.current = null;
     };
-  }, [clearHighlight, loadScene]);
+  }, [clearHighlight, loadScene, patchSelectedDebounced, projectId]);
 
-  /** Drag & drop creation of new objects */
-  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    if (!sceneRef.current || !cameraRef.current || !mountRef.current || !dragType) return;
+  // CREATE - drop objektu do scény (a do DB ak je projectId)
+  const handleDrop = useCallback(
+    async (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      if (!sceneRef.current || !cameraRef.current || !mountRef.current || !dragType) return;
 
-    const rect = mountRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      const rect = mountRef.current.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2(x, y), cameraRef.current);
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2(x, y), cameraRef.current);
 
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const point = new THREE.Vector3();
-    ray.ray.intersectPlane(plane, point);
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      const point = new THREE.Vector3();
+      ray.ray.intersectPlane(plane, point);
 
-    let geometry: THREE.BufferGeometry;
-    let params: ObjectParams;
+      let geometry: THREE.BufferGeometry;
+      let params: ObjectParams;
 
-    if (dragType === "cube") {
-      params = { width: 1, height: 1, depth: 1 };
-      geometry = new THREE.BoxGeometry(params.width, params.height, params.depth);
-      geometry.translate(params.width / 2, params.height / 2, params.depth / 2);
-    } else {
-      params = { radiusTop: 0.5, radiusBottom: 0.5, height: 1 };
-      geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
-    }
+      if (dragType === "cube") {
+        params = { width: 1, height: 1, depth: 1 };
+        geometry = new THREE.BoxGeometry(params.width, params.height, params.depth);
+        geometry.translate(params.width / 2, params.height / 2, params.depth / 2);
+      } else {
+        params = { radiusTop: 0.5, radiusBottom: 0.5, height: 1 };
+        geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
+      }
 
-    const material = new THREE.MeshStandardMaterial({
-      color: dragType === "cube" ? 0x00aaff : 0xffaa00,
-    });
+      const material = new THREE.MeshStandardMaterial({
+        color: dragType === "cube" ? 0x00aaff : 0xffaa00,
+      });
 
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.copy(point);
-    mesh.userData = { type: dragType, params, dbId: undefined };
-    sceneRef.current.add(mesh);
-  }
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(point);
 
+      mesh.userData = { type: dragType, params, dbId: undefined };
+
+      // CREATE do DB, ak sme v projekte
+      if (projectId) {
+        try {
+          const created = await createObjectInDB({
+            project_id: projectId,
+            type: dragType,
+            pos_x: mesh.position.x,
+            pos_y: mesh.position.y,
+            pos_z: mesh.position.z,
+            rotation_y: mesh.rotation.y,
+            params,
+          });
+          mesh.userData.dbId = created.id;
+        } catch (err: any) {
+          console.error(err);
+          alert(err?.message ?? "Failed to create object in DB.");
+        }
+      }
+
+      sceneRef.current.add(mesh);
+
+      // auto-select dropnutý objekt
+      selectedMeshRef.current = mesh;
+      setSelected({ mesh, type: dragType, params });
+      setTransform({
+        x: mesh.position.x,
+        y: mesh.position.y,
+        z: mesh.position.z,
+        rotationY: mesh.rotation.y,
+      });
+    },
+    [dragType, projectId, createObjectInDB]
+  );
+
+  // UPDATE - zmena transformu z panelu (a do DB ak dbId existuje)
   function updateTransform(field: keyof Transform, value: number) {
     if (!selectedMeshRef.current) return;
 
@@ -504,8 +563,16 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     const mesh = selectedMeshRef.current;
     mesh.position.set(next.x, next.y, next.z);
     mesh.rotation.y = next.rotationY;
+
+    patchSelectedDebounced({
+      pos_x: mesh.position.x,
+      pos_y: mesh.position.y,
+      pos_z: mesh.position.z,
+      rotation_y: mesh.rotation.y,
+    });
   }
 
+  // UPDATE - zmena geometrie (params) a patch do DB
   function updateGeometry(newParams: ObjectParams) {
     if (!selected) return;
 
@@ -524,6 +591,8 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
     selected.mesh.userData.params = newParams;
     setSelected({ ...selected, params: newParams });
+
+    patchSelectedDebounced({ params: newParams });
   }
 
   return (

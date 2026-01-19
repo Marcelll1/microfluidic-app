@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
-import { logAudit } from "@/lib/audit";
+
+// CREATE
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// kontrola prístupu k projektu
+// helper - kontrola prístupu k projektu
 async function canAccessProject(projectId: string) {
   const auth = await requireUser();
   if (!auth.ok) return auth;
@@ -25,12 +26,12 @@ async function canAccessProject(projectId: string) {
     return { ok: false as const, status: 403 as const, error: "Forbidden" };
   }
 
-  return { ok: true as const, user: auth.user };
+  return { ok: true as const };
 }
 
-// validácia vstupu pre CREATE objektu
+// validácia vstupu pre CREATE 1 objektu
 const CreateObjectSchema = z.object({
-  project_id: z.string().regex(UUID_RE, "Invalid project_id"),
+  project_id: z.string().regex(UUID_RE),
   type: z.string().min(1).max(50),
   pos_x: z.number(),
   pos_y: z.number(),
@@ -39,8 +40,7 @@ const CreateObjectSchema = z.object({
   params: z.any().optional(),
 });
 
-// CREATE
-// vytvorí jeden objekt v DB (explicitný CRUD CREATE pre object3d)
+// CREATE - vytvorí 1 objekt v DB a vráti ho (vrátane id)
 export async function POST(req: Request) {
   const auth = await requireUser();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -67,14 +67,6 @@ export async function POST(req: Request) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  await logAudit({
-    user_id: access.user.id,
-    action: "create",
-    entity: "object3d",
-    entity_id: data.id,
-    meta: { project_id: parsed.data.project_id, type: data.type },
-  });
 
   return NextResponse.json(data, { status: 201 });
 }

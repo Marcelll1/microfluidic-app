@@ -3,13 +3,14 @@ import { supabase } from "@/lib/supabaseServer";
 import { requireUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
-// Next.js: params môžu byť async → treba await
+// UPDATE / DELETE
+
 type Ctx = { params: { id: string } | Promise<{ id: string }> };
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// kontrola prístupu k objektu (owner projektu alebo admin)
+// helper - kontrola prístupu k objektu (owner projektu alebo admin)
 async function canAccessObject(objectId: string) {
   const auth = await requireUser();
   if (!auth.ok) return auth;
@@ -39,10 +40,9 @@ async function canAccessObject(objectId: string) {
   return { ok: true as const, user: auth.user, projectId: obj.project_id };
 }
 
-// UPDATE
-// upraví existujúci objekt v DB
+// UPDATE - upraví 1 objekt v DB
 export async function PATCH(req: Request, ctx: Ctx) {
-  const { id } = await ctx.params; // FIX: await params
+  const { id } = await ctx.params; // FIX
   if (!UUID_RE.test(id)) return NextResponse.json({ error: "Invalid object id" }, { status: 400 });
 
   const access = await canAccessObject(id);
@@ -54,7 +54,6 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
   const patch: any = {};
 
-  // UPDATE: čísla
   for (const k of ["pos_x", "pos_y", "pos_z", "rotation_y"]) {
     if (k in (body as any)) {
       const v = (body as any)[k];
@@ -64,12 +63,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
   }
 
-  // UPDATE: params
   if ("params" in (body as any)) {
-    const v = (body as any).params;
-    if (v !== null && typeof v !== "object")
-      return NextResponse.json({ error: "Invalid params" }, { status: 400 });
-    patch.params = v;
+    patch.params = (body as any).params;
   }
 
   if (Object.keys(patch).length === 0)
@@ -95,10 +90,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
   return NextResponse.json(data, { status: 200 });
 }
 
-// DELETE
-// zmaže existujúci objekt z DB
+// DELETE - zmaže 1 objekt z DB
 export async function DELETE(_req: Request, ctx: Ctx) {
-  const { id } = await ctx.params; // FIX: await params
+  const { id } = await ctx.params; // FIX
   if (!UUID_RE.test(id)) return NextResponse.json({ error: "Invalid object id" }, { status: 400 });
 
   const access = await canAccessObject(id);
