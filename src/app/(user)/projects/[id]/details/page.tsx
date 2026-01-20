@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 
 type Project = {
   id: string;
@@ -29,7 +30,8 @@ type Artifact = {
   kind?: string;
 };
 
-export default function ProjectDetailsPage({ params }: { params: { id: string } }) {
+export default function ProjectDetailsPage() {
+  const params = useParams<{ id: string }>();
   const projectId = params.id;
 
   const [project, setProject] = useState<Project | null>(null);
@@ -49,17 +51,17 @@ export default function ProjectDetailsPage({ params }: { params: { id: string } 
     setErr(null);
 
     try {
-      // READ project detail
+      // READ
       const pRes = await fetch(`/api/projects/${projectId}`);
       const pJson = await pRes.json().catch(() => null);
       if (!pRes.ok) throw new Error(pJson?.error ?? "Failed to load project.");
 
-      // READ objects
+      // READ
       const oRes = await fetch(`/api/objects?project_id=${projectId}`);
       const oJson = await oRes.json().catch(() => null);
       if (!oRes.ok) throw new Error(oJson?.error ?? "Failed to load objects.");
 
-      // READ artifacts (fetch all and filter)
+      // READ
       const aRes = await fetch(`/api/generated`);
       const aJson = await aRes.json().catch(() => null);
       if (!aRes.ok) throw new Error(aJson?.error ?? "Failed to load artifacts.");
@@ -80,6 +82,7 @@ export default function ProjectDetailsPage({ params }: { params: { id: string } 
   }
 
   useEffect(() => {
+    if (!projectId) return;
     void load();
   }, [projectId]);
 
@@ -160,31 +163,6 @@ export default function ProjectDetailsPage({ params }: { params: { id: string } 
                 </ul>
               )}
             </div>
-          </section>
-
-          <section className="card p-4 md:col-span-2">
-            <h2 className="text-lg font-medium mb-3">Last objects</h2>
-
-            {objects.length === 0 && <p className="text-slate-500">No objects.</p>}
-
-            {objects.length > 0 && (
-              <ul className="space-y-2">
-                {objects.slice(0, 10).map((o) => (
-                  <li key={o.id} className="bg-slate-900 rounded px-4 py-3">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div>
-                        <div className="font-medium">{o.type}</div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          x:{o.pos_x.toFixed(2)} y:{o.pos_y.toFixed(2)} z:{o.pos_z.toFixed(2)} • rotY:
-                          {o.rotation_y.toFixed(2)}
-                        </div>
-                      </div>
-                      <div className="text-xs text-slate-500">id: {o.id}</div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
           </section>
         </div>
       )}

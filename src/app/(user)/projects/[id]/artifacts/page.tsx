@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 
 type Artifact = {
   id: string;
@@ -10,7 +11,8 @@ type Artifact = {
   kind?: string;
 };
 
-export default function ProjectArtifactsPage({ params }: { params: { id: string } }) {
+export default function ProjectArtifactsPage() {
+  const params = useParams<{ id: string }>();
   const projectId = params.id;
 
   const [items, setItems] = useState<Artifact[]>([]);
@@ -22,7 +24,7 @@ export default function ProjectArtifactsPage({ params }: { params: { id: string 
     setErr(null);
 
     try {
-      // READ artifacts (fetch all and filter by project_id)
+      // READ
       const res = await fetch("/api/generated");
       const json = await res.json().catch(() => null);
 
@@ -39,6 +41,7 @@ export default function ProjectArtifactsPage({ params }: { params: { id: string 
   }
 
   useEffect(() => {
+    if (!projectId) return;
     void load();
   }, [projectId]);
 

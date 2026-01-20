@@ -83,7 +83,7 @@ export default function ProjectsPage() {
     let res: Response;
     try {
       res = await fetch("/api/projects", {
-        method: "POST",
+        method: "POST", // CREATE
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
@@ -121,7 +121,7 @@ export default function ProjectsPage() {
 
     let res: Response;
     try {
-      res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      res = await fetch(`/api/projects/${id}`, { method: "DELETE" }); // DELETE
     } catch (err) {
       console.error("Network error while deleting project", err);
       return;
@@ -143,13 +143,49 @@ export default function ProjectsPage() {
     await loadProjects();
   }
 
+  async function renameProject(p: Project) {
+    const newName = prompt("New project name:", p.name);
+    if (!newName) return;
+
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      alert("Project name is required.");
+      return;
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(`/api/projects/${p.id}`, {
+        method: "PATCH", // UPDATE
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+    } catch (err) {
+      console.error("Network error while updating project", err);
+      return;
+    }
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      console.error("Update project failed:", json);
+      alert(json?.error ?? "Update failed.");
+      return;
+    }
+
+    await loadProjects();
+  }
+
   function openProject(id: string) {
-    // READ (routing) – otvorí /projects/[id], ktoré presmeruje do editora
+    // READ (routing)
     router.push(`/projects/${id}`);
   }
 
   async function generatePython(id: string) {
-    const res = await fetch(`/api/projects/${id}/generate-python`, { method: "POST" });
+    const res = await fetch(`/api/projects/${id}/generate-python`, {
+      method: "POST",
+    });
+
     let json: any = null;
     try {
       json = await res.json();
@@ -168,7 +204,8 @@ export default function ProjectsPage() {
   }
 
   async function exportProject(id: string) {
-    const res = await fetch(`/api/projects/${id}/export`);
+    const res = await fetch(`/api/projects/${id}/export`); // READ (export)
+
     if (!res.ok) {
       const t = await res.text().catch(() => "");
       alert(`Export failed: ${t}`);
@@ -261,6 +298,10 @@ export default function ProjectsPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <button onClick={() => openProject(p.id)} className="button-secondary">
                       Open
+                    </button>
+
+                    <button onClick={() => renameProject(p)} className="button-secondary">
+                      Rename
                     </button>
 
                     <a className="button-secondary" href={`/projects/${p.id}/details`}>
