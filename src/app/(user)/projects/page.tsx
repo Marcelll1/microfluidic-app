@@ -36,11 +36,10 @@ export default function ProjectsPage() {
   }
 
   useEffect(() => {
-  if (me?.role === "admin") {
-    router.replace("/admin");
-  }
-}, [me, router]);
-
+    if (me?.role === "admin") {
+      router.replace("/admin");
+    }
+  }, [me, router]);
 
   async function loadProjects() {
     setLoading(true);
@@ -145,7 +144,8 @@ export default function ProjectsPage() {
   }
 
   function openProject(id: string) {
-    router.push(`/editor?project=${id}`);
+    // READ (routing) – otvorí /projects/[id], ktoré presmeruje do editora
+    router.push(`/projects/${id}`);
   }
 
   async function generatePython(id: string) {
@@ -262,6 +262,14 @@ export default function ProjectsPage() {
                     <button onClick={() => openProject(p.id)} className="button-secondary">
                       Open
                     </button>
+
+                    <a className="button-secondary" href={`/projects/${p.id}/details`}>
+                      Details
+                    </a>
+
+                    <a className="button-secondary" href={`/projects/${p.id}/artifacts`}>
+                      Artifacts
+                    </a>
 
                     <button onClick={() => generatePython(p.id)} className="button-secondary">
                       Generate code
