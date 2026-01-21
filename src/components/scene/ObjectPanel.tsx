@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+// Typy objektov a ich parametrov
 type ObjectType = "cube" | "cylinder";
 type CubeParams = { width: number; height: number; depth: number };
 type CylinderParams = {
@@ -10,13 +11,13 @@ type CylinderParams = {
   height: number;
 };
 type ObjectParams = CubeParams | CylinderParams;
-type Transform = { x: number; y: number; z: number; rotationY: number };
+type Transform = { x: number; y: number; z: number; rotationY: number };//pozicia a rotacia objektu
 
 export default function ObjectPanel({
-  type,
-  params,
-  transform,
-  onUpdateTransform,
+  type,//typ objektu (cube alebo cylinder) rozhoduje co zobrazit
+  params,//parametre objektu (rozmery)
+  transform,//aktualna pozicia a rotacia objektu
+  onUpdateTransform, //callbacky na Scne3D pre aktualizaciu transformacie a geometrie objektu
   onUpdateGeometry,
   onDelete,
 }: {
@@ -35,7 +36,7 @@ export default function ObjectPanel({
   const [dimensionError, setDimensionError] = useState<string | null>(null);
 
   function handleTransformChange(field: keyof Transform, raw: string) {
-    const value = parseFloat(raw);
+    const value = parseFloat(raw);//prevedie vstup(string) na cislo
 
     if (Number.isNaN(value)) {
       setTransformError("Value must be a number.");
@@ -52,10 +53,11 @@ export default function ObjectPanel({
       return;
     }
 
-    setTransformError(null);
-    onUpdateTransform(field, value);
+    setTransformError(null);//vycisti chybu ak je v poriadku
+    onUpdateTransform(field, value);//posle validnu hodnotu spat do Scene3D cez callback
   }
 
+  // Handlery pre zmenu rozmerov objektov s validaciou
   function handleCubeDimensionChange(key: keyof CubeParams, raw: string) {
     const value = parseFloat(raw);
 
@@ -81,6 +83,7 @@ export default function ObjectPanel({
     });
   }
 
+  // Cylinder dimension handler with validation
   function handleCylinderDimensionChange(
     key: keyof CylinderParams,
     raw: string,
