@@ -26,20 +26,21 @@ export async function GET() {
         )
       `
       )
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false });//najnovšie projekty prvé
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+    // mapovanie výsledkov na požadovaný formát vrátane emailu vlastníka
     const mapped = (data ?? []).map((p: any) => ({
       id: p.id,
       name: p.name,
       description: p.description,
       created_at: p.created_at,
       owner_id: p.owner_id,
-      owner_email: p.users?.email ?? "unknown",
+      owner_email: p.users?.email ?? "unknown", //priradenie emailu vlastníka alebo "unknown"
     }));
 
-    return NextResponse.json(mapped);
+    return NextResponse.json(mapped);//vrátenie zoznamu projektov pre admina
   }
 
   // READ (user)
@@ -56,20 +57,22 @@ export async function GET() {
 // CREATE
 // vytvorí nový projekt pre prihláseného používateľa
 export async function POST(req: Request) {
-  const auth = await requireUser();
+  const auth = await requireUser();//overenie prihlásenia používateľa
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const body = await req.json().catch(() => null);
+  // načítanie a validácia vstupu
+  const body = await req.json().catch(() => null); //ošetrenie chýb pri parsovaní JSON
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const description = typeof body?.description === "string" ? body.description.trim() : "";
 
-  // validácia vstupu
+  // validácia vstupu na serveri
   if (!name) return NextResponse.json({ error: "Name is required." }, { status: 400 });
   if (name.length < 3 || name.length > 100)
     return NextResponse.json({ error: "Name must be 3–100 chars." }, { status: 400 });
   if (description.length > 500)
     return NextResponse.json({ error: "Description max 500 chars." }, { status: 400 });
 
+  // vloženie nového projektu do databázy
   const { data, error } = await supabase
     .from("projects")
     .insert({
@@ -77,11 +80,12 @@ export async function POST(req: Request) {
       description: description || null,
       owner_id: auth.user.id,
     })
-    .select("*")
-    .single();
+    .select("*") //vrátiť vložený riadok
+    .single(); //očakáva sa len jeden vložený riadok
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 }); //chyba pri vložení
 
+  // zaznamenanie auditu vytvorenia projektu
   await logAudit({
     user_id: auth.user.id,
     action: "create",
