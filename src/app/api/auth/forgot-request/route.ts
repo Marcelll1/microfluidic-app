@@ -10,13 +10,14 @@ export async function POST(req: Request) {
     // vždy vraciame ok, aby sa nedalo zisťovať kto existuje
     return NextResponse.json({ ok: true });
   }
-
+  // nájdenie používateľa podľa emailu
   const { data: user } = await supabase
     .from("users")
     .select("id")
     .eq("email", email.trim())
     .maybeSingle();
 
+    // vytvorenie záznamu o požiadavke na reset hesla, ak používateľ existuje
   if (user?.id) {
     await supabase.from("password_reset_requests").insert({
       user_id: user.id,
