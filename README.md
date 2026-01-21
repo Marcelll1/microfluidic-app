@@ -164,37 +164,12 @@ http://localhost:3000/projects – vytvor projekt
 
 otvor projekt → editor → pridaj objekt → posuň → vymaž → refresh (CRUD test)
 
-6) CRUD operácie (kde sú implementované)
-Projects
 
-CREATE: POST /api/projects
-
-READ: GET /api/projects, GET /api/projects/[id]
-
-UPDATE: PATCH /api/projects/[id] (v UI cez „Rename“)
-
-DELETE: DELETE /api/projects/[id]
-
-Object3D
-
-CREATE: POST /api/objects/create (v UI pri dropnutí objektu)
-
-READ: GET /api/objects?project_id=...
-
-UPDATE: PATCH /api/objects/[id] (pohyb / úpravy v editore)
-
-DELETE: DELETE /api/objects/[id]
-
-7) Bezpečnosť (SQL injection)
-
-Aplikácia nepoužíva raw SQL stringy v aplikácii.
-Dotazy sa robia cez Supabase query builder (parameterizované dotazy), takže SQL injection je eliminovaný týmto spôsobom.
-
-8) Build (produkčný build)
+6) Build (produkčný build)
 npm run build
 npm run start
 
-9) Poznámky
+7) Poznámky
 
 Pri práci s projektmi a objektami sú endpointy chránené kontrolou prihlásenia a autorizácie (owner/admin).
 
