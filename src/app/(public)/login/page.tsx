@@ -4,9 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const router = useRouter();
+  const router = useRouter(); //router pre navigaciu medzi strankami po uspechu /projects
 
-  // login
+  // login hodnoty inputov
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [logging, setLogging] = useState(false);
@@ -23,65 +23,76 @@ export default function LoginPage() {
   const [rcPass2, setRcPass2] = useState("");
   const [resetting, setResetting] = useState(false);
 
+  //klient validacia emailu
   function isValidEmail(v: string) {
     const s = v.trim();
     return s.length >= 3 && s.includes("@") && s.includes(".");
   }
 
+  //handler pre login
   async function login(e: React.FormEvent) {
-    e.preventDefault();
+    e.preventDefault();//zakaze reload stranky
 
+    //klient side validacia formulara
     const e2 = email.trim();
     if (!e2) return alert("Email is required.");
     if (!isValidEmail(e2)) return alert("Email is invalid.");
     if (!password) return alert("Password is required.");
     if (password.length < 6) return alert("Password must be at least 6 characters.");
 
-    setLogging(true);
+    setLogging(true);//zacina login
 
+    //posle data na server email, heslo
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: e2, password }),
     });
 
+    //spracuje odpoved zo servera
     const json = await res.json().catch(() => null);
     setLogging(false);
 
+    //ak login neprebehne uspesne, zobrazi chybu
     if (!res.ok) {
       alert(json?.error ?? "Login failed.");
       return;
     }
-
+    //uspesny login - presmeruje na /projects
     router.push("/projects");
   }
 
+  //handler pre forgot password request
   async function requestForgot(e: React.FormEvent) {
     e.preventDefault();
 
+    //klient side validacia formulara
     const e2 = fpEmail.trim();
     if (!e2) return alert("Email is required.");
     if (!isValidEmail(e2)) return alert("Email is invalid.");
 
     setSending(true);
 
+    //posle poziadavku na server
     await fetch("/api/auth/forgot-request", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: e2, note: fpNote.trim() || null }),
-    }).catch(() => null);
+    }).catch(() => null);//chyby sa riesia na serveri, klientovi je jedno
 
     setSending(false);
-    alert("If the account exists, your request was sent to admin.");
-    setFpNote("");
+    alert("If the account exists, your request was sent to admin.");//zobrazi spravu
+    setFpNote("");//vycisti formular
   }
 
+  //handler pre set new password with code
   async function setPasswordWithCode(e: React.FormEvent) {
     e.preventDefault();
 
-    const e2 = rcEmail.trim();
-    const c2 = rcCode.trim();
+    const e2 = rcEmail.trim();//email
+    const c2 = rcCode.trim();//reset kod
 
+    //klient side validacia formulara
     if (!e2) return alert("Email is required.");
     if (!isValidEmail(e2)) return alert("Email is invalid.");
     if (!c2) return alert("Reset code is required.");
@@ -92,6 +103,7 @@ export default function LoginPage() {
 
     setResetting(true);
 
+    //posle poziadavku na server s emailom, kodom a novym heslom
     const res = await fetch("/api/auth/set-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -102,9 +114,11 @@ export default function LoginPage() {
       }),
     });
 
+    //spracuje odpoved zo servera
     const json = await res.json().catch(() => null);
     setResetting(false);
 
+    //ak neuspesne, zobrazi chybu
     if (!res.ok) {
       alert(json?.error ?? "Reset failed.");
       return;

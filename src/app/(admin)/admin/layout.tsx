@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 
+//ZATIAL NEROBI NIC je zbytocny kedze admin layout je v admin group layout
 export default async function AdminLayout({
   children,
 }: {

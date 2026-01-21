@@ -20,6 +20,7 @@ export default function RegisterPage() {
     const p = password.trim();
     const pc = passwordConfirm.trim();
 
+    //základná validácia
     if (!e) return "Email is required.";
     if (!e.includes("@")) return "Email must contain @.";
     if (!p) return "Password is required.";

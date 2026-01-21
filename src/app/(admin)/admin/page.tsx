@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+//overview typov pre admin dashboard
 type AdminUser = {
   id: string;
   email: string;
@@ -15,6 +16,7 @@ type AdminUser = {
   pending_reset_created_at: string | null;
 };
 
+//projekty z usera /api/admin/users/:id/projects
 type Project = {
   id: string;
   name: string;
@@ -22,6 +24,7 @@ type Project = {
   created_at: string;
 };
 
+//artifacty z usera /api/admin/users/:id/artifacts
 type Artifact = {
   id: string;
   kind: string;
@@ -32,14 +35,15 @@ type Artifact = {
 };
 
 export default function AdminDashboard() {
-  const router = useRouter();
+  const router = useRouter(); //pouziva sa pre openProject
 
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState<AdminUser[]>([]);//list uzivatelov
+  const [loading, setLoading] = useState(true); //ci sa nacitavaju data
 
-  const [expandedProjects, setExpandedProjects] = useState<Record<string, Project[] | null>>({});
-  const [expandedArtifacts, setExpandedArtifacts] = useState<Record<string, Artifact[] | null>>({});
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, Project[] | null>>({});//rozbalene projekty pre jednotlivych userov
+  const [expandedArtifacts, setExpandedArtifacts] = useState<Record<string, Artifact[] | null>>({});//rozbalene artifacty pre jednotlivych userov
 
+  //nacita prehlad uzivatelov
   async function loadUsers() {
     setLoading(true);
     const res = await fetch("/api/admin/overview");
@@ -56,12 +60,14 @@ export default function AdminDashboard() {
     setLoading(false);
   }
 
+  //pre konkretneho usera rozbali alebo zbali projekty
   async function toggleProjects(userId: string) {
     if (expandedProjects[userId]) {
-      setExpandedProjects((p) => ({ ...p, [userId]: null }));
+      setExpandedProjects((p) => ({ ...p, [userId]: null }));//zbali projekty
       return;
     }
 
+    //inak nacita projekty zo servera
     const res = await fetch(`/api/admin/users/${userId}/projects`);
     const json = await res.json().catch(() => null);
 
@@ -70,9 +76,10 @@ export default function AdminDashboard() {
       return;
     }
 
-    setExpandedProjects((p) => ({ ...p, [userId]: Array.isArray(json) ? json : [] }));
+    setExpandedProjects((p) => ({ ...p, [userId]: Array.isArray(json) ? json : [] }));//rozbali projekty
   }
 
+  //pre konkretneho usera rozbali alebo zbali artifacty
   async function toggleArtifacts(userId: string) {
     if (expandedArtifacts[userId]) {
       setExpandedArtifacts((p) => ({ ...p, [userId]: null }));
@@ -90,28 +97,32 @@ export default function AdminDashboard() {
     setExpandedArtifacts((p) => ({ ...p, [userId]: Array.isArray(json) ? json : [] }));
   }
 
+  //schvali password reset poziadavku pre usera
   async function approveReset(reqId: string) {
-    const res = await fetch(`/api/admin/password-resets/${reqId}/approve`, {
+    const res = await fetch(`/api/admin/password-resets/${reqId}/approve`, { //POST poziadavka
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note: null }),
+      body: JSON.stringify({ note: null }), //zatial bez poznamky
     });
 
     const json = await res.json().catch(() => null);
 
+    //ak nie je OK, zobrazi chybu
     if (!res.ok) {
       alert(json?.error ?? "Approve failed.");
       return;
     }
 
+    //uspesne schvaleny reset - zobrazi kod
     alert(`Reset code (give to user): ${json.reset_code}`);
     await loadUsers();
   }
-
+  //otvori projekt v editori
   function openProject(projectId: string) {
     router.push(`/editor?project=${projectId}`);
   }
 
+  //nacita uzivatelov pri prvom renderi
   useEffect(() => {
     void loadUsers();
   }, []);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+//Typ artifactu z GET /api/generated
 type Artifact = {
   id: string;
   kind: string;
@@ -13,20 +14,21 @@ type Artifact = {
 };
 
 export default function DashboardPage() {
-  const [items, setItems] = useState<Artifact[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<Artifact[]>([]); //nacitane artifacty(generated files)
+  const [loading, setLoading] = useState(true); //ci sa nacitavaju data
 
   // change password
-  const [oldPass, setOldPass] = useState("");
-  const [newPass1, setNewPass1] = useState("");
-  const [newPass2, setNewPass2] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [oldPass, setOldPass] = useState(""); //stare heslo
+  const [newPass1, setNewPass1] = useState("");//nove heslo
+  const [newPass2, setNewPass2] = useState("");//nove heslo potvrdenie
+  const [saving, setSaving] = useState(false);//ci sa heslo aktualizuje
 
   async function loadArtifacts() {
     setLoading(true);
-    const res = await fetch("/api/generated");
-    const json = await res.json().catch(() => null);
+    const res = await fetch("/api/generated"); //ziska vsetky artifacty
+    const json = await res.json().catch(() => null); //parsuje JSON
 
+    //ak nie je OK, hodi chybu
     if (!res.ok) {
       console.error("Failed to load artifacts:", json);
       setItems([]);
@@ -34,39 +36,45 @@ export default function DashboardPage() {
       return;
     }
 
+    //overi ci je to pole k ano ulozi ho ako Artifact[] inak prazdny list
     setItems(Array.isArray(json) ? json : []);
     setLoading(false);
   }
 
+  //handler pre zmenu hesla
   async function changePassword(e: React.FormEvent) {
-    e.preventDefault();
+    e.preventDefault(); //zakaze reload stranky
 
+    //client-side validacia formulara
     if (!oldPass) return alert("Old password is required.");
     if (!newPass1) return alert("New password is required.");
     if (newPass1.length < 6) return alert("New password must be at least 6 characters.");
     if (newPass1 !== newPass2) return alert("New passwords do not match.");
 
-    setSaving(true);
-    const res = await fetch("/api/auth/change-password", {
+    setSaving(true);//zacina save
+    const res = await fetch("/api/auth/change-password", {//posle POST poziadavku na zmenu hesla
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ old_password: oldPass, new_password: newPass1 }),
+      body: JSON.stringify({ old_password: oldPass, new_password: newPass1 }),//posle stare a nove heslo
     });
 
-    const json = await res.json().catch(() => null);
-    setSaving(false);
+    const json = await res.json().catch(() => null);//parsuje JSON
+    setSaving(false);//konci save
 
+    //ak nie je OK, zobrazi chybu
     if (!res.ok) {
       alert(json?.error ?? "Change password failed.");
       return;
     }
 
+    //uspesne zmenene heslo - vycisti formular a zobrazi spravu
     setOldPass("");
     setNewPass1("");
     setNewPass2("");
     alert("Password changed.");
   }
 
+  //nacita artifacty pri prvom renderi
   useEffect(() => {
     void loadArtifacts();
   }, []);

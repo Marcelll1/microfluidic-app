@@ -8,13 +8,13 @@ export default function HomePage() {
       </p>
       <div className="flex gap-4">
         <a
-          href="/login"
+          href="/login" //odkaz na login stranku
           className="bg-sky-500 hover:bg-sky-600 text-white px-5 py-2 rounded-md"
         >
           Login
         </a>
         <a
-          href="/register"
+          href="/register" //odkaz na registracnu stranku
           className="border border-sky-500 text-sky-400 hover:bg-sky-500 hover:text-white px-5 py-2 rounded-md"
         >
           Register

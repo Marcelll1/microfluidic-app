@@ -1,12 +1,13 @@
-import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { redirect } from "next/navigation"; //server side redirect
+import { requireUser } from "@/lib/auth"; //overenie uzivatela
 import Link from "next/link";
 import LogoutButton from "@/components/scene/LogoutButton";
 
+//admin layout komponent (pre admin sekcie)
 export default async function AdminGroupLayout({ children }: { children: React.ReactNode }) {
-  const auth = await requireUser();
-  if (!auth.ok) redirect("/login");
-  if (auth.user.role !== "admin") redirect("/projects");
+  const auth = await requireUser(); //overi prihlasenie uzivatela
+  if (!auth.ok) redirect("/login"); //ak nie je prihlaseny, presmeruje na login
+  if (auth.user.role !== "admin") redirect("/projects"); //ak nie je admin, presmeruje na user projekty
 
   return (
     <div className="app-shell bg-slate-950 text-slate-100">
