@@ -142,7 +142,7 @@ create table if not exists audit_log (
 V root projekte vytvor súbor .env.local:
 
 SUPABASE_URL=PASTE_SUPABASE_PROJECT_URL
-SUPABASE_ANON_KEY=PASTE_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=PASTE_SUPABASE_SERVICE_ROLE_KEY
 
 
 .env.local sa nesmie commitovať (má byť v .gitignore).
