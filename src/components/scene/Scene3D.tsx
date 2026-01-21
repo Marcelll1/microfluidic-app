@@ -1,13 +1,16 @@
 "use client";
-
+//pri tomto subore bolo vyuzivane generovanie kodu AI, pretoze obsahuje zlozity Three.js editor
+//AI pomohla s implementaciou funkcionalit ako drag&drop, vyber objektov, manipulacia s objektmi, komunikacia s API
+//jednotlive casti kodu ktore boli generovane niesu oznacene komenatrom pretoze boli upravovane a doplnane postupne v priebehu vyvoja ale AI kod tvorila zakladnu strukturu a funkcionalitu skoro celeho suboru
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import DragMenu from "./DragMenu";
 import ObjectPanel from "./ObjectPanel";
 
-type ObjectType = "cube" | "cylinder";
+type ObjectType = "cube" | "cylinder"; //definicia typov objektov
 
+//tvar riadku v DB pre 3D objekt z /api/objects?project_id=...
 interface DbObjectRow {
   id: string;
   project_id: string;
@@ -19,37 +22,40 @@ interface DbObjectRow {
   params: any;
 }
 
+//parametre geometrie podla typu objektu
 type CubeParams = { width: number; height: number; depth: number };
 type CylinderParams = { radiusTop: number; radiusBottom: number; height: number };
 type ObjectParams = CubeParams | CylinderParams;
-type Transform = { x: number; y: number; z: number; rotationY: number };
-type Selected = { mesh: THREE.Mesh; type: ObjectType; params: ObjectParams };
 
+type Transform = { x: number; y: number; z: number; rotationY: number };//to co zobrazuje/edituje ObjectPanel
+type Selected = { mesh: THREE.Mesh; type: ObjectType; params: ObjectParams };//aktualne vybraty objekt
+
+//kluc pre demo scenu (ak nieje projectId, tak sa scéna ukladá do localStorage)
 const DEMO_STORAGE_KEY = "demoScene_v1";
 
-// helper
+// helper pre zaokrúhľovanie posunu objektu na krok (0.1)
 function snap(value: number, step = 0.1) {
   return Math.round(value / step) * step;
 }
 
 export default function Scene3D({ projectId }: { projectId: string | null }) {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const mountRef = useRef<HTMLDivElement>(null);//ref na div kde sa rendruje Three.js scéna
+  const sceneRef = useRef<THREE.Scene | null>(null);//ref na Three.js scénu (objekty), drzia mimo react state aby sa zbytocne nerenderovalo pri kazdej zmene
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);//ref na kameru
 
-  const [dragType, setDragType] = useState<ObjectType | null>(null);
-  const [selected, setSelected] = useState<Selected | null>(null);
-  const [transform, setTransform] = useState<Transform>({
+  const [dragType, setDragType] = useState<ObjectType | null>(null);//typ objektu ktory sa prave drag&dropuje
+  const [selected, setSelected] = useState<Selected | null>(null);//aktualne vybraty objekt(pre zobrazenie v ObjectPanel)
+  const [transform, setTransform] = useState<Transform>({//cisla do ObjectPanel
     x: 0,
     y: 0,
     z: 0,
     rotationY: 0,
   });
 
-  const selectedMeshRef = useRef<THREE.Mesh | null>(null);
-  const isDraggingRef = useRef(false);
+  const selectedMeshRef = useRef<THREE.Mesh | null>(null);//mesh ktorym hybem mysou
+  const isDraggingRef = useRef(false);//ci sa prave draguje objekt
 
-  const patchTimerRef = useRef<number | null>(null);
+  const patchTimerRef = useRef<number | null>(null);//timer pre debounce update do DB
 
   // CREATE - vytvorí 1 objekt v DB a vráti jeho id
   const createObjectInDB = useCallback(
@@ -70,7 +76,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error ?? "CREATE failed");
-      return json as { id: string };
+      return json as { id: string }; //vrati id vytvoreneho objektu
     },
     []
   );
@@ -94,12 +100,12 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     (patch: any) => {
       const mesh = selectedMeshRef.current;
       const dbId = (mesh?.userData?.dbId as string | undefined) ?? undefined;
-      if (!mesh || !dbId || !projectId) return;
+      if (!mesh || !dbId || !projectId) return;//nic neupdatuj ak nie je vybraty objekt alebo nema dbId a existuje projectId
 
       if (patchTimerRef.current) window.clearTimeout(patchTimerRef.current);
       patchTimerRef.current = window.setTimeout(() => {
         void patchObjectInDB(dbId, patch);
-      }, 250);
+      }, 250);//250ms debounce(realne posle patch do DB az po 250ms od poslednej zmeny)
     },
     [patchObjectInDB, projectId]
   );
@@ -111,7 +117,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     if (row.type === "cube") {
       const p = (row.params || { width: 1, height: 1, depth: 1 }) as CubeParams;
       geometry = new THREE.BoxGeometry(p.width, p.height, p.depth);
-      geometry.translate(p.width / 2, p.height / 2, p.depth / 2);
+      geometry.translate(p.width / 2, p.height / 2, p.depth / 2); // posun aby objekt sedel na rohu a neratal sa od stredu
     } else {
       const p = (row.params || { radiusTop: 0.5, radiusBottom: 0.5, height: 1 }) as CylinderParams;
       geometry = new THREE.CylinderGeometry(p.radiusTop, p.radiusBottom, p.height, 32);
@@ -125,6 +131,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     mesh.position.set(row.pos_x, row.pos_y, row.pos_z);
     mesh.rotation.y = row.rotation_y;
 
+    //drzi sa typ a parameter pre panely a dbId pre update/delete
     mesh.userData = {
       type: row.type,
       params: row.params,
@@ -136,6 +143,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
   // READ - load scene (demo localStorage alebo DB)
   const loadScene = useCallback(async () => {
+    //vycisti sceny
     if (!sceneRef.current) return;
     const scene = sceneRef.current;
 
@@ -167,21 +175,22 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
           params: o.params ?? {},
         };
 
-        const mesh = createMeshFromRow(fakeRow);
-        mesh.userData.dbId = undefined;
+        const mesh = createMeshFromRow(fakeRow);//vytvori mesh z fake DB riadku
+        mesh.userData.dbId = undefined;//no dbId v demo režime
         scene.add(mesh);
       }
       return;
     }
 
     // DB - READ
-    const res = await fetch(`/api/objects?project_id=${projectId}`);
+    const res = await fetch(`/api/objects?project_id=${projectId}`);//ziska objekty pre dany projekt
     if (!res.ok) {
       const text = await res.text();
       console.error("READ failed:", res.status, res.statusText, text);
       return;
     }
 
+    //parsovanie odpovede
     let data: DbObjectRow[] = [];
     try {
       data = (await res.json()) as DbObjectRow[];
@@ -189,13 +198,14 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       data = [];
     }
 
+    //vytvorenie meshov z nacitanych dat (kazdy riadok z DB je mesh)
     for (const row of data) {
-      const mesh = createMeshFromRow(row);
-      scene.add(mesh);
+      const mesh = createMeshFromRow(row);//vytvori mesh z DB riadku
+      scene.add(mesh);//prida mesh do scény
     }
   }, [projectId, createMeshFromRow]);
 
-  // UPDATE (bulk save scene) - nechávam ako tvoju "Save" funkcionalitu
+  // UPDATE (bulk save scene) - uloží celú scénu do DB (alebo localStorage ak demo)
   const saveSceneToDB = useCallback(async () => {
     if (!sceneRef.current) return;
 
@@ -236,7 +246,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       return;
     }
 
-    await loadScene();
+    await loadScene();//reload scene po uložení
   }, [projectId, loadScene]);
 
   // global save event
@@ -248,7 +258,8 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     return () => document.removeEventListener("saveScene", handleSave);
   }, [saveSceneToDB]);
 
-  // helper
+  // helper pre highlight vybraneho objektu
+  //prejde vsetky meshe v scene a odstrani highlight (emissive farbu), selected mesh dostane emissive farbu
   const clearHighlight = useCallback(() => {
     if (!sceneRef.current) return;
     sceneRef.current.children.forEach((child) => {
@@ -266,12 +277,12 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     const mesh = selectedMeshRef.current;
     const dbId = mesh.userData?.dbId as string | undefined;
 
-    sceneRef.current.remove(mesh);
+    sceneRef.current.remove(mesh);//zmaze mesh zo scény lokalne
     selectedMeshRef.current = null;
     setSelected(null);
 
     // DELETE
-    if (dbId && projectId) {
+    if (dbId && projectId) {//ak ma dbId a existuje projectId, zmaze aj z DB
       const res = await fetch(`/api/objects/${dbId}`, { method: "DELETE" });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
@@ -292,64 +303,73 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
   // Three.js setup
   useEffect(() => {
+    //kontrola mount ref bez neho nemam kde rendrovat
     if (!mountRef.current) return;
     const mount = mountRef.current;
 
+    //inicializacia sceny, kamery, rendereru
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1d25);
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 1000);
-    camera.position.set(5, 5, 5);
+    //nastavenie kamery
+    const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 1000);//75 fov aspect podla velkosti mountu
+    camera.position.set(5, 5, 5);//nastavenie pociatocnej pozicie kamery
     cameraRef.current = camera;
 
+    //nastavenie rendereru vlozeneho do DOM
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     mount.appendChild(renderer.domElement);
 
+    //pridanie svetiel do scény
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     const pointLight = new THREE.PointLight(0xffffff, 1);
     pointLight.position.set(10, 10, 10);
     scene.add(pointLight);
 
+    //pridanie pomocnych osi a grid helperov
     scene.add(new THREE.GridHelper(20, 20));
     scene.add(new THREE.AxesHelper(5));
 
+    //inicializacia ovladania kamery
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
+    controls.enableDamping = true;//vyhladenie pohybu
 
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const intersection = new THREE.Vector3();
+    const raycaster = new THREE.Raycaster();//pre vyber objektov myskou
+    const mouse = new THREE.Vector2();//normalizovane suradnice mysky (-1 to +1)
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);//rovina y=0 pre projekciu pri dragovaní
+    const intersection = new THREE.Vector3();//bod prieniku rayu s rovinou
 
+    //funkcia pre vyber meshu pod myskou
     function pickMesh(e: MouseEvent): THREE.Mesh | null {
       if (!sceneRef.current || !cameraRef.current || !mountRef.current) return null;
       const rect = mountRef.current.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouse, cameraRef.current);
-      const hits = raycaster.intersectObjects(sceneRef.current.children);
-      const hit = hits.find((h) => h.object instanceof THREE.Mesh);
+      const hits = raycaster.intersectObjects(sceneRef.current.children);//ziska vsetky objekty pod myskou
+      const hit = hits.find((h) => h.object instanceof THREE.Mesh);//najde prvy Mesh ktory ray hitol
       return hit ? (hit.object as THREE.Mesh) : null;
     }
 
+    // udalosti pre vyber a manipulaciu s objektami
     function onClick(e: MouseEvent) {
-      if (isDraggingRef.current) {
+      if (isDraggingRef.current) {//ak sa prave dragovalo, tak click ignoruj
         isDraggingRef.current = false;
         return;
       }
 
-      const mesh = pickMesh(e);
+      const mesh = pickMesh(e);//ziska mesh pod myskou
       if (!mesh) {
-        clearHighlight();
+        clearHighlight();//ak nic nie je pod myskou, odstrani highlight
         selectedMeshRef.current = null;
         setSelected(null);
         return;
       }
 
-      const type = (mesh.userData.type as ObjectType) ?? "cube";
+      const type = (mesh.userData.type as ObjectType) ?? "cube";//ziska typ objektu z userData
       const params =
         (mesh.userData.params as ObjectParams) ??
         ({ width: 1, height: 1, depth: 1 } as CubeParams);
@@ -358,9 +378,9 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       const mat = mesh.material as THREE.MeshStandardMaterial;
       if (mat.emissive) mat.emissive.setHex(0x333333);
 
-      selectedMeshRef.current = mesh;
-      setSelected({ mesh, type, params });
-      setTransform({
+      selectedMeshRef.current = mesh;//nastavi vybraty mesh
+      setSelected({ mesh, type, params });//nastavi selected pre ObjectPanel
+      setTransform({//nastavi transform pre ObjectPanel
         x: mesh.position.x,
         y: mesh.position.y,
         z: mesh.position.z,
@@ -368,6 +388,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       });
     }
 
+    // udalosti pre dragovanie objektov
     function onMouseDown(e: MouseEvent) {
       if (!selectedMeshRef.current) return;
       const hit = pickMesh(e);
@@ -414,6 +435,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       }
     }
 
+    // udalost pre posun objektu dopredu/dozadu po osi kamery (s shift+wheel)
     function onWheel(e: WheelEvent) {
       if (!selectedMeshRef.current || !cameraRef.current) return;
       if (!e.shiftKey) return;
@@ -451,7 +473,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         });
       }
     }
-
+    //pridanie event listenerov
     renderer.domElement.addEventListener("click", onClick);
     renderer.domElement.addEventListener("mousedown", onMouseDown);
     renderer.domElement.addEventListener("mousemove", onMouseMove);
@@ -459,13 +481,14 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     renderer.domElement.addEventListener("mouseleave", onMouseUp);
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
+    //nekonecny loop pre renderovanie scény
     function animate() {
       requestAnimationFrame(animate);
       controls.update();
       renderer.render(scene, camera);
     }
     animate();
-
+    //initial load scény
     void loadScene();
 
     return () => {
@@ -612,7 +635,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         onDrop={handleDrop}
       />
 
-      {selected && (
+      {selected && (//ak je nieco vybrane, zobraz ObjectPanel
         <ObjectPanel
           type={selected.type}
           params={selected.params}
