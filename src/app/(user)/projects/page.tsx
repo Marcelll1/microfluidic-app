@@ -3,59 +3,66 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+//struktura projektu z api/projects
 type Project = {
   id: string;
   name: string;
   description: string | null;
   created_at: string;
-  owner_email?: string;
+  owner_email?: string;// volitelne, zobrazuje sa len adminovi
 };
 
+//struktura prihlaseneho usera z api/auth/me
 type Me = { id: string; email: string; role: "user" | "admin" };
 
+//stranka so zoznamom projektov pre prihlaseneho usera
 export default function ProjectsPage() {
-  const router = useRouter();
+  const router = useRouter();//navigacia(open project, redirect ak je admin atd.)
 
-  const [me, setMe] = useState<Me | null>(null);
+  const [me, setMe] = useState<Me | null>(null);//bud prihlaseny user alebo null(rozhoduje sa podla toho ci je admin)
 
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);//zoznam projektov
+  const [loading, setLoading] = useState(true);//ci sa nacitavaju projekty
+  const [creating, setCreating] = useState(false);//ci sa vytvara novy projekt
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [name, setName] = useState("");//nazov noveho projektu
+  const [description, setDescription] = useState("");//popis noveho projektu
 
+  //overi ci je user prihlaseny a jeho rolu
   async function loadMe() {
     try {
       const res = await fetch("/api/auth/me");
       if (!res.ok) return;
       setMe(await res.json());
     } catch {
-      // ignore
+      // ignore (treba dorobit logout alebo nieco podobne ak sa neda nacitat session)
     }
   }
 
+  //redirect admina na admin dashboard (druhy safeguard okrem user layoutu)
   useEffect(() => {
     if (me?.role === "admin") {
       router.replace("/admin");
     }
   }, [me, router]);
 
+  //nacita zoznam projektov z api/projects
   async function loadProjects() {
-    setLoading(true);
+    setLoading(true);//zacina nacitavanie (zabezpeci ze sa zobrazi loading screen)
 
-    let res: Response;
+    //posle GET poziadavku na api endpoint
+    let res: Response;//odpoved zo servera
     try {
       res = await fetch("/api/projects");
-    } catch (err) {
+    } catch (err) {//ak sa nepodarilo nadviazat spojenie
       console.error("Network error while loading projects", err);
       setLoading(false);
       return;
     }
-
+    //spracuje odpoved zo servera
     let data: any = null;
     try {
-      data = await res.json();
+      data = await res.json();//parsuje JSON odpoved
     } catch {
       data = null;
     }
@@ -65,21 +72,23 @@ export default function ProjectsPage() {
       setLoading(false);
       return;
     }
-
+    //nastavi nacitane projekty do stavu
     setProjects(Array.isArray(data) ? data : []);
     setLoading(false);
   }
 
   async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
+    e.preventDefault();//zabranenie refreshu stranky
 
+    //klient side validacia
     if (!name.trim()) {
       alert("Project name is required.");
       return;
     }
 
-    setCreating(true);
+    setCreating(true);//zacina vytvaranie projektu
 
+    //posle POST poziadavku na api/projects
     let res: Response;
     try {
       res = await fetch("/api/projects", {
@@ -96,6 +105,7 @@ export default function ProjectsPage() {
       return;
     }
 
+    //spracuje odpoved zo servera
     let data: any = null;
     try {
       data = await res.json();
@@ -105,20 +115,23 @@ export default function ProjectsPage() {
 
     setCreating(false);
 
+    //ak vytvorenie projektu neprebehlo uspesne, zobrazi chybu
     if (!res.ok) {
       console.error("Create project failed:", data);
       alert(data?.error ?? "Create project failed.");
       return;
     }
 
+    //ak vytvorenie projektu prebehlo uspesne, vycisti formular a nacita projekty znova
     setName("");
     setDescription("");
     await loadProjects();
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this project?")) return;
+    if (!confirm("Delete this project?")) return;//potvrdenie mazania
 
+    //posle DELETE poziadavku na api/projects/:id
     let res: Response;
     try {
       res = await fetch(`/api/projects/${id}`, { method: "DELETE" }); // DELETE
@@ -127,32 +140,36 @@ export default function ProjectsPage() {
       return;
     }
 
+    //spracuje odpoved zo servera
     let data: any = null;
     try {
       data = await res.json();
     } catch {
       data = null;
     }
-
+    //ak mazanie projektu neprebehlo uspesne, zobrazi chybu
     if (!res.ok) {
       console.error("Delete failed:", data);
       alert(data?.error ?? "Delete failed.");
       return;
     }
 
+    //ak uspesne vymazal, nacita projekty znova
     await loadProjects();
   }
-
+    //prejmenuje projekt pomocou api/projects/:id (UPDATE/PATCH)
   async function renameProject(p: Project) {
-    const newName = prompt("New project name:", p.name);
-    if (!newName) return;
+    const newName = prompt("New project name:", p.name);//zobrazi prompt na zadanie noveho nazvu([p.name] je predvyplneny aktualny nazov)
+    if (!newName) return;//ak user zrusil prompt, ukonci funkciu
 
+    //klient side validacia
     const trimmed = newName.trim();
     if (!trimmed) {
       alert("Project name is required.");
       return;
     }
 
+    //posle PATCH poziadavku na api/projects/:id
     let res: Response;
     try {
       res = await fetch(`/api/projects/${p.id}`, {
@@ -164,28 +181,31 @@ export default function ProjectsPage() {
       console.error("Network error while updating project", err);
       return;
     }
-
+    //spracuje odpoved zo servera
     const json = await res.json().catch(() => null);
 
+    //ak update projektu neprebehlo uspesne, zobrazi chybu
     if (!res.ok) {
       console.error("Update project failed:", json);
       alert(json?.error ?? "Update failed.");
       return;
     }
-
+    //ak uspesne prejmenoval, nacita projekty znova
     await loadProjects();
   }
 
+  //otvori projekt (navigacia na projektovu stranku)
   function openProject(id: string) {
     // READ (routing)
-    router.push(`/projects/${id}`);
+    router.push(`/projects/${id}`);//presmeruje na editor projektu
   }
 
+  //generuje python kod pre projekt pomocou api/projects/:id/generate-python
   async function generatePython(id: string) {
     const res = await fetch(`/api/projects/${id}/generate-python`, {
       method: "POST",
     });
-
+    //parsuje odpoved zo servera
     let json: any = null;
     try {
       json = await res.json();
@@ -193,37 +213,43 @@ export default function ProjectsPage() {
       json = null;
     }
 
+    //ak generovanie zlyhalo, zobrazi chybu
     if (!res.ok) {
       console.error("Generate failed:", res.status, json);
       alert(json?.error ?? "Generate failed.");
       return;
     }
 
+    //ak generovanie prebehlo uspesne, zobrazi spravu a presmeruje na dashboard
     alert(`Generated: ${json.artifact.filename}`);
     router.push("/dashboard");
   }
 
+  //exportuje projekt ako JSON subor pomocou api/projects/:id/export
   async function exportProject(id: string) {
     const res = await fetch(`/api/projects/${id}/export`); // READ (export)
 
+    //ak export zlyhal, zobrazi text odpovede ako chybu
     if (!res.ok) {
       const t = await res.text().catch(() => "");
       alert(`Export failed: ${t}`);
       return;
     }
 
-    const blob = new Blob([await res.text()], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
+    //vytvori a stiahne JSON subor s datami projektu
+    const blob = new Blob([await res.text()], { type: "application/json" });//ziska textovu odpoved a vytvori z nej blob
+    const url = URL.createObjectURL(blob);//vytvori URL pre blob (docasny download link)
     const a = document.createElement("a");
     a.href = url;
     a.download = `project_${id}.json`;
     a.click();
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(url);//uvolni URL po stiahnuti
   }
 
+  //spusti sa raz po prvom renderi
   useEffect(() => {
-    void loadMe();
-    void loadProjects();
+    void loadMe();//nacita info o prihlasenom userovi
+    void loadProjects();//nacita projekty
   }, []);
 
   return (

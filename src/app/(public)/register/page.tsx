@@ -14,6 +14,7 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  //klient side validacia emailu a hesla
   function validateForm(): string | null {
     const e = email.trim();
     const p = password.trim();
@@ -27,6 +28,7 @@ export default function RegisterPage() {
     return null;
   }
 
+  //spusti validaciu na klientovy a potom posle registracne data na server
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -40,20 +42,24 @@ export default function RegisterPage() {
 
     setLoading(true);
 
+    //posle data na server
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email.trim(), password: password.trim() }),
     });
 
+    //spracuje odpoved zo servera
     const data = await res.json().catch(() => ({}));
     setLoading(false);
 
+    //ak registracia neprebehla uspesne, zobrazi chybu
     if (!res.ok) {
       setError(data?.error ?? "Registration failed.");
       return;
     }
 
+    //ak registracia prebehla uspesne, zobrazi spravu a presmeruje na login
     setSuccess("Registration successful! Redirecting to login...");
     setTimeout(() => router.push("/login"), 1200);
   }

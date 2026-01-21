@@ -11,7 +11,7 @@ export default function ProjectIdPage({ params }: { params: { id: string } }) {
   // táto stránka existuje len ako vstupný bod pre /projects/[id]
   // reálne otvorí editor
   useEffect(() => {
-    router.replace(`/editor?project=${projectId}`);
+    router.replace(`/editor?project=${projectId}`);//replace a nie push aby sa nedalo vratit spat na tuto stranku(loop)
   }, [router, projectId]);
 
   return (
