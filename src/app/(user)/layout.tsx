@@ -22,7 +22,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     let alive = true;
 
-    //spusta iverenie session cez api/auth/me
+    //spusta overenie session cez api/auth/me
     async function loadMe() {
       setLoading(true);//zacina nacitavanie (zabezpeci ze sa zobrazi loading screen)
       const res = await fetch("/api/auth/me").catch(() => null);//posle GET poziadavku na api endpoint

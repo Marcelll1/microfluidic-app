@@ -3,53 +3,59 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
+//Typ projektu z GET /api/projects/:id
 type Project = {
   id: string;
   name: string;
-  description: string | null;
-  created_at: string;
+  description: string | null; //moze byt null
+  created_at: string; //ISO datum
 };
 
+//Typ objektu z GET /api/objects?project_id=:id
 type Obj3D = {
   id: string;
   project_id: string;
-  type: string;
+  type: string; //cube, cylinder
   pos_x: number;
   pos_y: number;
   pos_z: number;
   rotation_y: number;
-  params: any;
-  created_at?: string;
+  params: any; //geometricke parametre objektu
+  created_at?: string; //optional ISO datum
 };
 
+//Typ artifactu z GET /api/generated
 type Artifact = {
   id: string;
   filename: string;
   created_at: string;
   project_id: string;
-  kind?: string;
+  kind?: string; //optional ale je to python
 };
 
 export default function ProjectDetailsPage() {
   const params = useParams<{ id: string }>();
   const projectId = params.id;
 
-  const [project, setProject] = useState<Project | null>(null);
-  const [objects, setObjects] = useState<Obj3D[]>([]);
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [project, setProject] = useState<Project | null>(null); //nacitany projekt
+  const [objects, setObjects] = useState<Obj3D[]>([]); //nacitane objekty v projekte
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]); //nacitane artifacty(generated files) v projekte
+  const [loading, setLoading] = useState(true); //ci sa nacitavaju data
+  const [err, setErr] = useState<string | null>(null); //chyba pri nacitani
 
-  const typesSummary = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const o of objects) map.set(o.type, (map.get(o.type) ?? 0) + 1);
-    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  //statistika objektov podla typu (generovane AI)
+  const typesSummary = useMemo(() => { //prepočíta sa len keď sa zmenia objekty a pri prvom renderi
+    const map = new Map<string, number>(); //mapa typ->pocet kusov
+    for (const o of objects) map.set(o.type, (map.get(o.type) ?? 0) + 1);//inkrementuj pocet pre dany typ ak neexistuje tak 0
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);//zoradi zostupne podla poctu(najvacsi hore)
   }, [objects]);
 
+  //zapne loading a vymaze stary error
   async function load() {
     setLoading(true);
     setErr(null);
 
+    //nacitanie projektu, objektov projektu, artefaktov projektu
     try {
       // READ
       const pRes = await fetch(`/api/projects/${projectId}`);
@@ -69,7 +75,7 @@ export default function ProjectDetailsPage() {
       setProject(pJson as Project);
       setObjects(Array.isArray(oJson) ? (oJson as Obj3D[]) : []);
       setArtifacts(
-        Array.isArray(aJson) ? (aJson as Artifact[]).filter((x) => x?.project_id === projectId) : []
+        Array.isArray(aJson) ? (aJson as Artifact[]).filter((x) => x?.project_id === projectId) : [] //vyfiltruj len artefakty daneho projektu
       );
     } catch (e: any) {
       setErr(e?.message ?? "Load failed.");
@@ -80,7 +86,7 @@ export default function ProjectDetailsPage() {
       setLoading(false);
     }
   }
-
+  //vzdy ked sa zmeni projectId (inicialne alebo ked user prejde na iny projekt) tak sa zavola load
   useEffect(() => {
     if (!projectId) return;
     void load();

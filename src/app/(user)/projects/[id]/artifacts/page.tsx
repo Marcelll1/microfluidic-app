@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
+//Typ artifactu z GET /api/generated
 type Artifact = {
-  id: string;
+  id: string; //UUID
   filename: string;
   created_at: string;
   project_id: string;
@@ -13,35 +14,37 @@ type Artifact = {
 
 export default function ProjectArtifactsPage() {
   const params = useParams<{ id: string }>();
-  const projectId = params.id;
+  const projectId = params.id; //filter artefaktu generovanie linkov v UI
 
-  const [items, setItems] = useState<Artifact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [items, setItems] = useState<Artifact[]>([]); //nacitane artifacty(generated files) v projekte
+  const [loading, setLoading] = useState(true); //ci sa nacitavaju data
+  const [err, setErr] = useState<string | null>(null); //chyba pri nacitani
 
+  //zapne loading a vymaze stary error
   async function load() {
     setLoading(true);
     setErr(null);
 
     try {
       // READ
-      const res = await fetch("/api/generated");
-      const json = await res.json().catch(() => null);
+      const res = await fetch("/api/generated"); //ziska vsetky artifacty
+      const json = await res.json().catch(() => null); //parsuje JSON
 
-      if (!res.ok) throw new Error(json?.error ?? "Failed to load artifacts.");
+      if (!res.ok) throw new Error(json?.error ?? "Failed to load artifacts."); //ak nie je OK, hodi chybu
 
-      const all = Array.isArray(json) ? (json as Artifact[]) : [];
-      setItems(all.filter((x) => x?.project_id === projectId));
+      const all = Array.isArray(json) ? (json as Artifact[]) : []; //overi ci je to pole
+      setItems(all.filter((x) => x?.project_id === projectId));//filter len artefakty daneho projektu
     } catch (e: any) {
-      setErr(e?.message ?? "Load failed.");
-      setItems([]);
+      setErr(e?.message ?? "Load failed.");//nastavi chybu
+      setItems([]);//vycisti stare data
     } finally {
-      setLoading(false);
+      setLoading(false);//vypne loading
     }
   }
 
+  //vzdy ked sa zmeni projectId (inicialne alebo ked user prejde na iny projekt) tak sa zavola load
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId) return;//ak neni projectId tak nic
     void load();
   }, [projectId]);
 
