@@ -1,226 +1,69 @@
 "use client";
+import * as THREE from "three";
 
-import { useState } from "react";
-
-// Typy objektov a ich parametrov
-type ObjectType = "cube" | "cylinder";
-type CubeParams = { width: number; height: number; depth: number };
-type CylinderParams = {
-  radiusTop: number;
-  radiusBottom: number;
-  height: number;
-};
-type ObjectParams = CubeParams | CylinderParams;
-type Transform = { x: number; y: number; z: number; rotationY: number };//pozicia a rotacia objektu
-
-export default function ObjectPanel({
-  type,//typ objektu (cube alebo cylinder) rozhoduje co zobrazit
-  params,//parametre objektu (rozmery)
-  transform,//aktualna pozicia a rotacia objektu
-  onUpdateTransform, //callbacky na Scne3D pre aktualizaciu transformacie a geometrie objektu
-  onUpdateGeometry,
-  onDelete,
-}: {
-  type: ObjectType;
-  params: ObjectParams;
-  transform: Transform;
-  onUpdateTransform: (field: keyof Transform, value: number) => void;
-  onUpdateGeometry: (p: ObjectParams) => void;
-  onDelete: () => void;
-}) {
-  const [openT, setOpenT] = useState(true);
-  const [openD, setOpenD] = useState(true);
-
-  // client-side validačné chyby
-  const [transformError, setTransformError] = useState<string | null>(null);
-  const [dimensionError, setDimensionError] = useState<string | null>(null);
-
-  function handleTransformChange(field: keyof Transform, raw: string) {
-    const value = parseFloat(raw);//prevedie vstup(string) na cislo
-
-    if (Number.isNaN(value)) {
-      setTransformError("Value must be a number.");
-      return;
-    }
-
-    if (field !== "rotationY" && (value < -1000 || value > 1000)) {
-      setTransformError("Position must be between -1000 and 1000.");
-      return;
-    }
-
-    if (field === "rotationY" && (value < -360 || value > 360)) {
-      setTransformError("Rotation must be between -360 and 360 degrees.");
-      return;
-    }
-
-    setTransformError(null);//vycisti chybu ak je v poriadku
-    onUpdateTransform(field, value);//posle validnu hodnotu spat do Scene3D cez callback
-  }
-
-  // Handlery pre zmenu rozmerov objektov s validaciou
-  function handleCubeDimensionChange(key: keyof CubeParams, raw: string) {
-    const value = parseFloat(raw);
-
-    if (Number.isNaN(value)) {
-      setDimensionError("Dimension must be a number.");
-      return;
-    }
-
-    if (value <= 0) {
-      setDimensionError("Dimension must be greater than 0.");
-      return;
-    }
-
-    if (value > 1000) {
-      setDimensionError("Dimension is too large (max 1000).");
-      return;
-    }
-
-    setDimensionError(null);
-    onUpdateGeometry({
-      ...(params as CubeParams),
-      [key]: value,
-    });
-  }
-
-  // Cylinder dimension handler with validation
-  function handleCylinderDimensionChange(
-    key: keyof CylinderParams,
-    raw: string,
-  ) {
-    const value = parseFloat(raw);
-
-    if (Number.isNaN(value)) {
-      setDimensionError("Dimension must be a number.");
-      return;
-    }
-
-    if (value <= 0) {
-      setDimensionError("Dimension must be greater than 0.");
-      return;
-    }
-
-    if (value > 1000) {
-      setDimensionError("Dimension is too large (max 1000).");
-      return;
-    }
-
-    setDimensionError(null);
-    onUpdateGeometry({
-      ...(params as CylinderParams),
-      [key]: value,
-    });
-  }
-
+export default function ObjectPanel({ selected, transform, onUpdate, onClip, onDelete }: any) {
   return (
-    <aside className="absolute right-3 top-3 w-64 bg-slate-900/80 border border-slate-800 rounded-xl shadow-xl text-slate-100 p-4 backdrop-blur">
-      <h4 className="text-lg font-semibold mb-2">Object editor</h4>
-
-      {/* Transform section */}
-      <button
-        className="w-full text-left text-sky-300 mb-2"
-        onClick={() => setOpenT((v) => !v)}
-      >
-        {openT ? "▼" : "▶"} Transform
-      </button>
-      {openT && (
-        <div className="flex flex-col gap-2 mb-2">
-          {(["x", "y", "z", "rotationY"] as (keyof Transform)[]).map(
-            (field) => (
-              <label
-                key={field}
-                className="text-sm flex items-center justify-between gap-2"
-              >
-                <span>{field}</span>
-                <input
-                  type="number"
-                  step={field === "rotationY" ? 1 : 0.1}
-                  value={transform[field]}
-                  onChange={(e) =>
-                    handleTransformChange(field, e.target.value)
-                  }
-                  className="w-28 bg-slate-950 border border-slate-800 rounded-md px-2 py-1"
-                />
-              </label>
-            ),
-          )}
-          {transformError && (
-            <p className="text-xs text-red-400 mt-1">{transformError}</p>
-          )}
+    <aside className="absolute right-4 top-4 w-64 bg-slate-900/95 border border-slate-700 rounded-xl p-5 shadow-2xl z-40 text-white">
+      <h2 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-4">Editor Objektu</h2>
+      
+      <div className="space-y-4">
+        {/* Názov objektu */}
+        <div>
+          <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Názov</label>
+          <input 
+            type="text" 
+            defaultValue={selected.userData.name} 
+            onBlur={e => { selected.userData.name = e.target.value; }}
+            className="w-full bg-black border border-slate-700 rounded p-2 text-xs outline-none focus:border-sky-500" 
+          />
         </div>
-      )}
 
-      {/* Dimensions section */}
-      <button
-        className="w-full text-left text-sky-300 mb-2 mt-1"
-        onClick={() => setOpenD((v) => !v)}
-      >
-        {openD ? "▼" : "▶"} Dimensions
-      </button>
-      {openD && (
-        <div className="flex flex-col gap-2 mb-2">
-          {type === "cube" ? (
-            <>
-              {(["width", "height", "depth"] as (keyof CubeParams)[]).map(
-                (key) => (
-                  <label
-                    key={key}
-                    className="text-sm flex items-center justify-between gap-2"
-                  >
-                    <span>{key}</span>
-                    <input
-                      type="number"
-                      step={0.1}
-                      min={0.1}
-                      max={1000}
-                      value={(params as CubeParams)[key]}
-                      onChange={(e) =>
-                        handleCubeDimensionChange(key, e.target.value)
-                      }
-                      className="w-28 bg-slate-950 border border-slate-800 rounded-md px-2 py-1"
-                    />
-                  </label>
-                ),
-              )}
-            </>
-          ) : (
-            <>
-              {(
-                ["radiusTop", "radiusBottom", "height"] as (keyof CylinderParams)[]
-              ).map((key) => (
-                <label
-                  key={key}
-                  className="text-sm flex items-center justify-between gap-2"
-                >
-                  <span>{key}</span>
-                  <input
-                    type="number"
-                    step={0.1}
-                    min={0.1}
-                    max={1000}
-                    value={(params as CylinderParams)[key]}
-                    onChange={(e) =>
-                      handleCylinderDimensionChange(key, e.target.value)
-                    }
-                    className="w-28 bg-slate-950 border border-slate-800 rounded-md px-2 py-1"
-                  />
-                </label>
-              ))}
-            </>
-          )}
-          {dimensionError && (
-            <p className="text-xs text-red-400 mt-1">{dimensionError}</p>
-          )}
+        {/* X, Y, Z Posun */}
+        <div className="grid grid-cols-3 gap-2">
+          {['x', 'y', 'z'].map(axis => (
+            <div key={axis}>
+              <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Poz {axis}</label>
+              <input 
+                type="number" step="0.1"
+                value={transform[axis]} 
+                onChange={e => onUpdate(axis, parseFloat(e.target.value))}
+                className="w-full bg-black border border-slate-700 rounded p-1 text-xs text-center" 
+              />
+            </div>
+          ))}
         </div>
-      )}
 
-      {/* Delete button */}
-      <button
-        onClick={onDelete}
-        className="mt-2 w-full bg-red-700 hover:bg-red-800 text-white text-sm px-3 py-2 rounded-md"
-      >
-        Delete object
-      </button>
+        {/* Všetky rotácie */}
+        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800">
+          {['rotX', 'rotY', 'rotZ'].map(axis => (
+            <div key={axis}>
+              <label className="text-[10px] text-pink-400 font-bold uppercase block mb-1">{axis}</label>
+              <input 
+                type="number" step="1"
+                value={Math.round(transform[axis])} 
+                onChange={e => onUpdate(axis, parseFloat(e.target.value))}
+                className="w-full bg-black border border-slate-700 rounded p-1 text-xs text-center focus:border-pink-500" 
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Šikmé Zrezanie */}
+        <div className="pt-2 border-t border-slate-800">
+          <label className="text-[10px] text-amber-500 font-bold uppercase block mb-2">Šikmé zrezanie (Výška / Uhol)</label>
+          <div className="flex gap-2">
+            <input type="number" placeholder="Výška" onChange={e => onClip(parseFloat(e.target.value) || 0, 0)} className="w-1/2 bg-black border border-slate-700 rounded p-2 text-xs text-center" />
+            <input type="number" placeholder="Uhol °" onChange={e => onClip(0, parseFloat(e.target.value) || 0)} className="w-1/2 bg-black border border-slate-700 rounded p-2 text-xs text-center" />
+          </div>
+        </div>
+
+        <button 
+          onClick={onDelete} 
+          className="w-full bg-red-900/40 hover:bg-red-600 text-red-400 hover:text-white border border-red-900/50 py-2 rounded text-[10px] font-bold mt-2 transition"
+        >
+          ZMAZAŤ OBJEKT
+        </button>
+      </div>
     </aside>
   );
 }
