@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import DragMenu from "./DragMenu";
 import ObjectPanel from "./ObjectPanel";
 import SceneGraph from "./SceneGraph";
@@ -30,6 +31,176 @@ function snap(value: number, step = 0.1) {
   return Math.round(value / step) * step;
 }
 
+/**
+ * Aplikuje rezaciu rovinu na objekt v WORLD-SPACE + pridá vyplnenie rezu cez stencil buffer.
+ * Používa štandardnú Three.js stencil techniku zo vzorového príkladu.
+ */
+function applyClipWorldSpace(obj: THREE.Object3D, height: number, angleDeg: number) {
+  const rad = THREE.MathUtils.degToRad(angleDeg);
+  // DÔLEŽITÉ: normalNormal sa nesmie mutovať medzi použitiami → každý štep clone()
+  const localNormal = new THREE.Vector3(Math.sin(rad), -Math.cos(rad), 0).normalize();
+
+  const doApply = (m: THREE.Mesh) => {
+    if (!m.material) return;
+    m.updateMatrixWorld(true);
+
+    // Normála v world space
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(m.matrixWorld);
+    const worldNormal = localNormal.clone().applyMatrix3(normalMatrix).normalize();
+    const worldPoint = localNormal.clone().multiplyScalar(-height).applyMatrix4(m.matrixWorld);
+    const constant = -worldNormal.dot(worldPoint);
+    const clipPlane = new THREE.Plane(worldNormal, constant);
+
+    // Hlavný materiál: rez + len predná strana
+    const mat = m.material as THREE.MeshStandardMaterial;
+    mat.clippingPlanes = [clipPlane];
+    mat.side = THREE.FrontSide;
+    mat.needsUpdate = true;
+    m.renderOrder = 6;
+
+    // Odstrán starú cap skupinu a jej materiály
+    const oldCap = m.getObjectByName('__clipCap__');
+    if (oldCap) {
+      oldCap.traverse(c => { if (c instanceof THREE.Mesh) (c.material as THREE.Material).dispose(); });
+      m.remove(oldCap);
+    }
+
+    const capGroup = new THREE.Group();
+    capGroup.name = '__clipCap__';
+
+    // Stencil pass BackSide – increment (s rovnakou clip rovinou ako hlavný mesh)
+    const sMat1 = new THREE.MeshBasicMaterial({
+      colorWrite: false, depthWrite: false,
+      stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc,
+      side: THREE.BackSide, clippingPlanes: [clipPlane],
+      stencilFail: THREE.IncrementWrapStencilOp,
+      stencilZFail: THREE.IncrementWrapStencilOp,
+      stencilZPass: THREE.IncrementWrapStencilOp,
+    });
+    const sMesh1 = new THREE.Mesh(m.geometry, sMat1);
+    sMesh1.renderOrder = 6;
+    capGroup.add(sMesh1);
+
+    // Stencil pass FrontSide – decrement
+    const sMat2 = new THREE.MeshBasicMaterial({
+      colorWrite: false, depthWrite: false,
+      stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc,
+      side: THREE.FrontSide, clippingPlanes: [clipPlane],
+      stencilFail: THREE.DecrementWrapStencilOp,
+      stencilZFail: THREE.DecrementWrapStencilOp,
+      stencilZPass: THREE.DecrementWrapStencilOp,
+    });
+    const sMesh2 = new THREE.Mesh(m.geometry, sMat2);
+    sMesh2.renderOrder = 6;
+    capGroup.add(sMesh2);
+
+    // Cap fill – kreslí kde stencil != 0, potom ho vynuluje (ref=0, Replace)
+    const meshColor = mat.color?.getHex() ?? 0x00aaff;
+    const capMat = new THREE.MeshStandardMaterial({
+      color: meshColor,
+      metalness: 0.1,
+      roughness: 0.75,
+      side: THREE.DoubleSide,
+      clippingPlanes: [],
+      stencilWrite: true,
+      stencilRef: 0,
+      stencilFunc: THREE.NotEqualStencilFunc,
+      stencilFail: THREE.ReplaceStencilOp,
+      stencilZFail: THREE.ReplaceStencilOp,
+      stencilZPass: THREE.ReplaceStencilOp,
+    });
+    // Veľká plocha zaplní rez – stencil test zaistí, že sa vykreslí iba prierezu
+    const capPlane = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), capMat);
+    capPlane.renderOrder = 6.1;
+    // Orientácia: plocha kolmá na localNormal, pozícia = bod rezu v lokálnom priestore
+    capPlane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), localNormal.clone());
+    capPlane.position.copy(localNormal.clone().multiplyScalar(-height));
+    capGroup.add(capPlane);
+
+    m.add(capGroup);
+  };
+
+  if (obj instanceof THREE.Group) {
+    obj.children.forEach(c => { if (c instanceof THREE.Mesh) doApply(c); });
+  } else if (obj instanceof THREE.Mesh) {
+    doApply(obj);
+  }
+}
+
+// ── Per-edge bevel geometria ────────────────────────────────────────────────
+type EdgeGroup = "Všetky" | "Zvislé rohy" | "Horné hrany" | "Dolné hrany";
+
+function buildBevelGeometry(
+  w: number, h: number, d: number,
+  r: number, group: EdgeGroup
+): THREE.BufferGeometry {
+  if (r <= 0) {
+    const g = new THREE.BoxGeometry(w, h, d);
+    g.translate(w / 2, h / 2, d / 2);
+    return g;
+  }
+  if (group === "Všetky") {
+    const cr = Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001);
+    const g = new RoundedBoxGeometry(w, h, d, 4, cr);
+    g.translate(w / 2, h / 2, d / 2);
+    return g;
+  }
+  if (group === "Zvislé rohy") {
+    // Zaoblený obdĺžnik v XZ rovine, extrudovaný po Y
+    const cr = Math.min(r, w / 2 - 0.001, d / 2 - 0.001);
+    const shape = new THREE.Shape();
+    shape.moveTo(cr, 0);
+    shape.lineTo(w - cr, 0);
+    shape.quadraticCurveTo(w, 0, w, cr);
+    shape.lineTo(w, d - cr);
+    shape.quadraticCurveTo(w, d, w - cr, d);
+    shape.lineTo(cr, d);
+    shape.quadraticCurveTo(0, d, 0, d - cr);
+    shape.lineTo(0, cr);
+    shape.quadraticCurveTo(0, 0, cr, 0);
+    const g = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 8 });
+    g.rotateX(-Math.PI / 2);
+    g.translate(0, 0, d);
+    return g;
+  }
+  if (group === "Horné hrany") {
+    // Profil ZY s zaobleným vrchom, extrudovaný po X
+    const cr = Math.min(r, d / 2 - 0.001, h / 2 - 0.001);
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(d, 0);
+    shape.lineTo(d, h - cr);
+    shape.quadraticCurveTo(d, h, d - cr, h);
+    shape.lineTo(cr, h);
+    shape.quadraticCurveTo(0, h, 0, h - cr);
+    shape.lineTo(0, 0);
+    const g = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false, curveSegments: 8 });
+    g.rotateY(Math.PI / 2);
+    g.translate(0, 0, d);
+    return g;
+  }
+  if (group === "Dolné hrany") {
+    // Profil ZY so zaobleným spodkom, extrudovaný po X
+    const cr = Math.min(r, d / 2 - 0.001, h / 2 - 0.001);
+    const shape = new THREE.Shape();
+    shape.moveTo(cr, 0);
+    shape.quadraticCurveTo(0, 0, 0, cr);
+    shape.lineTo(0, h);
+    shape.lineTo(d, h);
+    shape.lineTo(d, cr);
+    shape.quadraticCurveTo(d, 0, d - cr, 0);
+    shape.lineTo(cr, 0);
+    const g = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false, curveSegments: 8 });
+    g.rotateY(Math.PI / 2);
+    g.translate(0, 0, d);
+    return g;
+  }
+  const fallback = new THREE.BoxGeometry(w, h, d);
+  fallback.translate(w / 2, h / 2, d / 2);
+  return fallback;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function Scene3D({ projectId }: { projectId: string | null }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -45,11 +216,13 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
   const [simSize, setSimSize] = useState({ x: 10, y: 10, z: 10 });
   const [showLB, setShowLB] = useState(true);
   const [lbColor, setLbColor] = useState("#4466aa");
+  const [lbSpacing, setLbSpacing] = useState(1);
 
   // Refy pre pôvodnú logiku hýbania
   const selectedMeshRef = useRef<THREE.Object3D | null>(null);
   const isDraggingRef = useRef(false);
   const patchTimerRef = useRef<number | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // Funkcia na aktualizáciu zoznamu objektov
   const syncObjectsList = useCallback(() => {
@@ -88,32 +261,81 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
   // Pomocná funkcia na vytvorenie meshu z DB
   const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Object3D => {
-    let geometry: THREE.BufferGeometry;
     const p = row.params || {};
 
+    // --- Rekonštrukcia RBC bunky z uložených vertices/indices ---
+    if (row.type === "rbc") {
+      const vertices = p.vertices as number[] | undefined;
+      const indices = p.indices as number[] | undefined;
+
+      const geom = new THREE.BufferGeometry();
+      if (vertices && indices) {
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geom.setIndex(indices);
+        geom.computeVertexNormals();
+      }
+      const membraneMat = new THREE.MeshStandardMaterial({ color: 0xaa2222, side: THREE.DoubleSide });
+      const membraneMesh = new THREE.Mesh(geom, membraneMat);
+
+      const sphereGeom = new THREE.SphereGeometry(0.3, 16, 16);
+      const sphereMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+      const sphereMesh = new THREE.Mesh(sphereGeom, sphereMat);
+
+      const group = new THREE.Group();
+      group.add(membraneMesh);
+      group.add(sphereMesh);
+      group.position.set(row.pos_x, row.pos_y, row.pos_z);
+      group.rotation.set(p.rotX || 0, row.rotation_y, p.rotZ || 0);
+      group.updateMatrixWorld(true);
+      group.userData = {
+        interactable: true,
+        type: "rbc",
+        params: row.params || {},
+        dbId: row.id,
+        name: p.name || "Bunka",
+        clipHeight: 0,
+        clipAngle: 0,
+      };
+      return group;
+    }
+
+    let geometry: THREE.BufferGeometry;
+    const bevel = p.bevelRadius || 0;
+    const w = p.width || 1, h = p.height || 1, d = p.depth || 1;
+
     if (row.type === "cube") {
-      geometry = new THREE.BoxGeometry(p.width || 1, p.height || 1, p.depth || 1);
-      geometry.translate((p.width || 1) / 2, (p.height || 1) / 2, (p.depth || 1) / 2);
+      const edgeGroup: EdgeGroup = (p.bevelGroup as EdgeGroup) || "Všetky";
+      geometry = buildBevelGeometry(w, h, d, bevel, edgeGroup);
     } else {
       geometry = new THREE.CylinderGeometry(p.radiusTop || 0.5, p.radiusBottom || 0.5, p.height || 1, 32);
     }
 
     const material = new THREE.MeshStandardMaterial({ 
       color: row.type === "cube" ? 0x00aaff : 0xffaa00,
-      clippingPlanes: [] // Pripravené pre zrezanie
+      clippingPlanes: []
     });
 
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(row.pos_x, row.pos_y, row.pos_z);
     mesh.rotation.set(p.rotX || 0, row.rotation_y, p.rotZ || 0);
+    mesh.updateMatrixWorld(true);
 
     mesh.userData = { 
       interactable: true, 
       type: row.type, 
       params: row.params || {}, 
       dbId: row.id, 
-      name: p.name || row.type 
+      name: p.name || row.type,
+      clipHeight: p.clipHeight || 0,
+      clipAngle: p.clipAngle || 0,
+      bevelRadius: bevel,
     };
+
+    // Obnov zrezanie zo uložených parametrov
+    if (p.clipHeight || p.clipAngle) {
+      applyClipWorldSpace(mesh, p.clipHeight || 0, p.clipAngle || 0);
+    }
+
     return mesh;
   }, []);
 
@@ -155,23 +377,25 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     const group = new THREE.Group();
     group.name = "lbSystem";
 
-    // 1. Podlaha (GridHelper)
-    const gridHelper = new THREE.GridHelper(Math.max(simSize.x, simSize.z), Math.max(simSize.x, simSize.z), lbColor, "#222233");
+    // 1. Podlaha (GridHelper) – počet delení podľa lbSpacing
+    const gridDivs = Math.max(1, Math.round(Math.max(simSize.x, simSize.z) / lbSpacing));
+    const gridHelper = new THREE.GridHelper(Math.max(simSize.x, simSize.z), gridDivs, lbColor, "#222233");
     gridHelper.position.set(simSize.x / 2, 0, simSize.z / 2);
     group.add(gridHelper);
 
-    // 2. Ohaničenie oblasti (Bounding Box)
+    // 2. Ohraničenie oblasti (Bounding Box)
     const boxGeo = new THREE.BoxGeometry(simSize.x, simSize.y, simSize.z);
     const edges = new THREE.EdgesGeometry(boxGeo);
     const boxLines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: lbColor, opacity: 0.5, transparent: true }));
     boxLines.position.set(simSize.x / 2, simSize.y / 2, simSize.z / 2);
     group.add(boxLines);
 
-    // 3. Lattice Body (Skutočná LB sieť - voliteľné, ak je príliš hustá, stačia okraje)
-    const pts = [];
-    for(let x=0; x<=simSize.x; x++) {
-      for(let y=0; y<=simSize.y; y++) {
-        for(let z=0; z<=simSize.z; z++) {
+    // 3. Lattice Body – hustota bodov podľa lbSpacing
+    const pts: number[] = [];
+    const sp = Math.max(0.1, lbSpacing);
+    for (let x = 0; x <= simSize.x + 1e-9; x += sp) {
+      for (let y = 0; y <= simSize.y + 1e-9; y += sp) {
+        for (let z = 0; z <= simSize.z + 1e-9; z += sp) {
           pts.push(x, y, z);
         }
       }
@@ -183,7 +407,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     group.add(latticePoints);
 
     scene.add(group);
-  }, [simSize, showLB, lbColor]);
+  }, [simSize, showLB, lbColor, lbSpacing]);
 
   // --- THREE.JS INITIALIZATION ---
   useEffect(() => {
@@ -198,7 +422,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     camera.position.set(simSize.x, simSize.y + 5, simSize.z + 10);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.localClippingEnabled = true; // Dôležité pre zrezanie!
@@ -228,12 +452,15 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       // Hľadáme objekty, ktoré sme my označili ako interactable (ignorujeme sieť)
       let interactableHit = null;
       for (const h of hits) {
+        // Preskočiť stencil cap plochy – nesmú blokovať kliknutie/drag
+        let isCapChild = false;
+        let tmp: THREE.Object3D | null = h.object;
+        while (tmp) { if (tmp.name === '__clipCap__') { isCapChild = true; break; } tmp = tmp.parent; }
+        if (isCapChild) continue;
+
         let obj: THREE.Object3D | null = h.object;
         while (obj) {
-          if (obj.userData?.interactable) {
-            interactableHit = obj;
-            break;
-          }
+          if (obj.userData?.interactable) { interactableHit = obj; break; }
           obj = obj.parent;
         }
         if (interactableHit) break;
@@ -303,6 +530,10 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       const mesh = selectedMeshRef.current;
       mesh.position.set(sX, mesh.position.y, sZ);
       setTransform(prev => ({ ...prev, x: sX, z: sZ }));
+      // Re-aplikuj rez keď sa objekt hýbe
+      if (mesh.userData.clipHeight || mesh.userData.clipAngle) {
+        applyClipWorldSpace(mesh, mesh.userData.clipHeight || 0, mesh.userData.clipAngle || 0);
+      }
     };
 
     const onMouseUp = () => {
@@ -333,6 +564,10 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
       setTransform(prev => ({ ...prev, x: mesh.position.x, y: mesh.position.y, z: mesh.position.z }));
       patchSelectedDebounced({ pos_x: mesh.position.x, pos_y: mesh.position.y, pos_z: mesh.position.z });
+      // Re-aplikuj rez keď sa objekt hýbe
+      if (mesh.userData.clipHeight || mesh.userData.clipAngle) {
+        applyClipWorldSpace(mesh, mesh.userData.clipHeight || 0, mesh.userData.clipAngle || 0);
+      }
     };
 
     renderer.domElement.addEventListener("click", onClick);
@@ -384,12 +619,18 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     let geometry: THREE.BufferGeometry;
     let params: ObjectParams;
 
+    // Unikátne meno podľa počtu existujúcich objektov tohto typu
+    const existingCount = sceneRef.current.children.filter(
+      c => c.userData?.type === dragType && c.userData?.interactable
+    ).length;
+    const uniqueName = dragType === "cube" ? `Kocka${existingCount + 1}` : `Valec${existingCount + 1}`;
+
     if (dragType === "cube") {
-      params = { width: 1, height: 1, depth: 1, name: "Kocka" };
+      params = { width: 1, height: 1, depth: 1, name: uniqueName };
       geometry = new THREE.BoxGeometry(1, 1, 1);
       geometry.translate(0.5, 0.5, 0.5);
     } else {
-      params = { radiusTop: 0.5, radiusBottom: 0.5, height: 1, name: "Valec" };
+      params = { radiusTop: 0.5, radiusBottom: 0.5, height: 1, name: uniqueName };
       geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
     }
 
@@ -405,7 +646,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     point.z = Math.max(0, Math.min(snap(point.z, 0.1), simSize.z));
     mesh.position.copy(point);
 
-    mesh.userData = { interactable: true, type: dragType, params, dbId: undefined, name: params.name };
+    mesh.userData = { interactable: true, type: dragType, params, dbId: undefined, name: params.name, clipHeight: 0, clipAngle: 0, bevelRadius: 0 };
     sceneRef.current.add(mesh);
     syncObjectsList();
 
@@ -418,18 +659,138 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         });
         mesh.userData.dbId = created.id;
       } catch (err: any) { alert(err?.message); }
+    } else {
+      // Demo mode – okamžite ulož do localStorage
+      const allMeshes = sceneRef.current!.children.filter(c => c.userData?.interactable);
+      const data = allMeshes.map(m => ({
+        type: m.userData.type,
+        pos_x: m.position.x, pos_y: m.position.y, pos_z: m.position.z,
+        rotation_y: m.rotation.y,
+        params: m.userData.params ?? {},
+      }));
+      localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(data));
     }
   }, [dragType, projectId, simSize, createObjectInDB, syncObjectsList]);
 
   // --- IMPORT RBC BUNKY (Guľa + Membrána = Group) ---
-  const handleImportRBC = (rbcGroup: THREE.Group) => {
+  const handleImportRBC = useCallback(async (rbcGroup: THREE.Group) => {
     if (!sceneRef.current) return;
+
+    // Extrakuj vertices a indices z membrány (meshChild s indexovanou geometriou)
+    const membraneMeshChild = rbcGroup.children.find(
+      (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.geometry.getIndex() !== null
+    );
+    let vertices: number[] = [];
+    let indices: number[] = [];
+    if (membraneMeshChild) {
+      const posAttr = membraneMeshChild.geometry.getAttribute('position') as THREE.BufferAttribute;
+      vertices = Array.from(posAttr.array as Float32Array);
+      const indexAttr = membraneMeshChild.geometry.getIndex()!;
+      indices = Array.from(indexAttr.array as Uint16Array | Uint32Array);
+    }
+
+    const existingCount = sceneRef.current.children.filter(c => c.userData?.type === "rbc").length;
+    const uniqueName = `Bunka${existingCount + 1}`;
+    const params = { vertices, indices, name: uniqueName };
+
+    rbcGroup.userData = {
+      interactable: true, type: "rbc", params,
+      dbId: undefined, name: uniqueName, clipHeight: 0, clipAngle: 0,
+    };
+
     sceneRef.current.add(rbcGroup);
     syncObjectsList();
-  };
+
+    if (projectId) {
+      try {
+        const created = await createObjectInDB({
+          project_id: projectId, type: "rbc",
+          pos_x: rbcGroup.position.x, pos_y: rbcGroup.position.y, pos_z: rbcGroup.position.z,
+          rotation_y: rbcGroup.rotation.y, params,
+        });
+        rbcGroup.userData.dbId = created.id;
+      } catch (err: any) { alert(err?.message); }
+    } else {
+      // Demo mode – ulož do localStorage
+      const allObjs = sceneRef.current!.children.filter(c => c.userData?.interactable);
+      const data = allObjs.map(m => ({
+        type: m.userData.type,
+        pos_x: m.position.x, pos_y: m.position.y, pos_z: m.position.z,
+        rotation_y: m.rotation.y,
+        params: m.userData.params ?? {},
+      }));
+      localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(data));
+    }
+  }, [projectId, createObjectInDB, syncObjectsList]);
+
+  // --- SAVE SCENE ---
+  const saveScene = useCallback(async () => {
+    if (!sceneRef.current) return;
+    const scene = sceneRef.current;
+    const meshes = scene.children.filter(c => c.userData?.interactable === true);
+
+    if (!projectId) {
+      // Demo mode – ulož do localStorage
+      const data = meshes.map(m => ({
+        type: m.userData.type,
+        pos_x: m.position.x, pos_y: m.position.y, pos_z: m.position.z,
+        rotation_y: m.rotation.y,
+        params: m.userData.params ?? {},
+      }));
+      localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(data));
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+      return;
+    }
+
+    setSaveStatus("saving");
+    try {
+      const objects = meshes.map(m => ({
+        type: m.userData.type ?? "cube",
+        pos_x: m.position.x, pos_y: m.position.y, pos_z: m.position.z,
+        rotation_y: m.rotation.y,
+        params: {
+          ...(m.userData.params ?? {}),
+          rotX: m.rotation.x,
+          rotY: m.rotation.y,
+          rotZ: m.rotation.z,
+          name: m.userData.name,
+          clipHeight: m.userData.clipHeight ?? 0,
+          clipAngle: m.userData.clipAngle ?? 0,
+          bevelRadius: m.userData.bevelRadius ?? 0,
+          bevelGroup: m.userData.bevelGroup ?? "Všetky",
+        },
+      }));
+
+      const res = await fetch("/api/objects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId, objects }),
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error ?? "Save failed");
+      }
+
+      // Synchronizácia dbId pre každý mesh (po bulk replace sú nové IDs)
+      const updated = await fetch(`/api/objects?project_id=${projectId}`);
+      if (updated.ok) {
+        const rows = await updated.json() as DbObjectRow[];
+        meshes.forEach((m, i) => { if (rows[i]) m.userData.dbId = rows[i].id; });
+      }
+
+      setSaveStatus("saved");
+    } catch (err: any) {
+      console.error(err);
+      setSaveStatus("error");
+    } finally {
+      setTimeout(() => setSaveStatus("idle"), 2500);
+    }
+  }, [projectId]);
 
   // --- DELETE & UPDATE ---
-  const deleteSelected = async () => {
+  const deleteSelected = useCallback(async () => {
     if (!selectedMeshRef.current || !sceneRef.current) return;
     const mesh = selectedMeshRef.current;
     const dbId = mesh.userData?.dbId;
@@ -440,13 +801,13 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     if (dbId && projectId) {
       await fetch(`/api/objects/${dbId}`, { method: "DELETE" });
     }
-  };
+  }, [projectId, syncObjectsList]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Delete") void deleteSelected(); };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  });
+  }, [deleteSelected]);
 
   const updateTransformPanel = (field: string, value: number) => {
     if (!selectedMeshRef.current) return;
@@ -464,30 +825,53 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
     setTransform(prev => ({ ...prev, [field]: v }));
 
+    mesh.userData.params = { ...mesh.userData.params, rotX: mesh.rotation.x, rotZ: mesh.rotation.z };
     patchSelectedDebounced({
       pos_x: mesh.position.x, pos_y: mesh.position.y, pos_z: mesh.position.z,
       rotation_y: mesh.rotation.y,
-      params: { ...mesh.userData.params, rotX: mesh.rotation.x, rotZ: mesh.rotation.z }
+      params: mesh.userData.params,
     });
+
+    // Re-aplikuj zrezanie v novom world-space (rotácia/pohyb mohli zmeniť orientáciu)
+    if (mesh.userData.clipHeight || mesh.userData.clipAngle) {
+      applyClipWorldSpace(mesh, mesh.userData.clipHeight || 0, mesh.userData.clipAngle || 0);
+    }
   };
 
   const updateClipping = (height: number, angleDeg: number) => {
-    if (!selectedMeshRef.current) return;
     const mesh = selectedMeshRef.current;
-    
-    // Zrezanie funguje pre základné tvary, pre Group to treba aplikovať na deti
-    const applyToMaterial = (m: THREE.Mesh) => {
-      if (!m.material) return;
-      const rad = THREE.MathUtils.degToRad(angleDeg);
-      const normal = new THREE.Vector3(Math.sin(rad), -Math.cos(rad), 0).normalize();
-      (m.material as any).clippingPlanes = [new THREE.Plane(normal, height)];
-    };
+    if (!mesh) return;
 
-    if (mesh instanceof THREE.Group) {
-      mesh.children.forEach(c => { if (c instanceof THREE.Mesh) applyToMaterial(c); });
-    } else if (mesh instanceof THREE.Mesh) {
-      applyToMaterial(mesh);
+    // Ulož do userData aj do params (pre DB)
+    mesh.userData.clipHeight = height;
+    mesh.userData.clipAngle = angleDeg;
+    mesh.userData.params = { ...mesh.userData.params, clipHeight: height, clipAngle: angleDeg };
+
+    // Aplikuj rez v world-space (funguje aj pre rotované objekty)
+    applyClipWorldSpace(mesh, height, angleDeg);
+
+    // Ulož do DB
+    patchSelectedDebounced({ params: mesh.userData.params });
+  };
+
+  const updateBevel = (edgeGroup: EdgeGroup, radius: number) => {
+    const mesh = selectedMeshRef.current;
+    if (!mesh || !(mesh instanceof THREE.Mesh) || mesh.userData.type !== "cube") return;
+    const p = mesh.userData.params || {};
+    const w = p.width || 1, h = p.height || 1, d = p.depth || 1;
+
+    if (mesh.geometry) mesh.geometry.dispose();
+    mesh.geometry = buildBevelGeometry(w, h, d, radius, edgeGroup);
+
+    mesh.userData.bevelRadius = radius;
+    mesh.userData.bevelGroup = edgeGroup;
+    mesh.userData.params = { ...mesh.userData.params, bevelRadius: radius, bevelGroup: edgeGroup };
+
+    if (mesh.userData.clipHeight || mesh.userData.clipAngle) {
+      applyClipWorldSpace(mesh, mesh.userData.clipHeight || 0, mesh.userData.clipAngle || 0);
     }
+
+    patchSelectedDebounced({ params: mesh.userData.params });
   };
 
   return (
@@ -510,14 +894,50 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
             Zobraziť sieť
           </label>
         </div>
+        <div className="w-px h-8 bg-slate-700"></div>
+        <div className="flex flex-col">
+          <label className="text-[10px] text-sky-400 font-bold uppercase mb-1">Hustota LB bodov</label>
+          <input
+            type="number" min="0.1" step="0.1"
+            value={lbSpacing}
+            onChange={e => setLbSpacing(Math.max(0.1, +e.target.value))}
+            className="w-16 bg-black border border-slate-600 rounded p-1 text-white text-xs text-center"
+          />
+        </div>
+        <div className="w-px h-8 bg-slate-700"></div>
+        {/* Save Scene */}
+        <button
+          onClick={() => void saveScene()}
+          disabled={saveStatus === "saving"}
+          className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition border
+            ${saveStatus === "saved" ? "bg-emerald-700 border-emerald-500 text-white" :
+              saveStatus === "error" ? "bg-red-800 border-red-500 text-white" :
+              saveStatus === "saving" ? "bg-slate-700 border-slate-500 text-slate-400 cursor-not-allowed" :
+              "bg-sky-800 hover:bg-sky-600 border-sky-600 text-white"}`}
+        >
+          {saveStatus === "saving" ? "Ukladám..." :
+           saveStatus === "saved" ? "Uložené ✓" :
+           saveStatus === "error" ? "Chyba ✗" :
+           "Uložiť scénu"}
+        </button>
       </div>
 
       <DragMenu onStartDrag={(t: ObjectType) => setDragType(t)} onImportRBC={handleImportRBC} />
 
       <SceneGraph 
         objects={objects} 
-        selectedId={selectedMeshRef.current?.uuid}
+        selectedId={selected?.mesh.uuid}
         onSelect={(obj: THREE.Object3D) => {
+          // Zmaž highlight zo všetkých objektov
+          sceneRef.current?.children.forEach(c => {
+            if (c.userData?.interactable && c instanceof THREE.Mesh) {
+              (c.material as THREE.MeshStandardMaterial).emissive.setHex(0x000000);
+            }
+          });
+          // Vysvieti vybraný
+          if (obj instanceof THREE.Mesh) {
+            (obj.material as THREE.MeshStandardMaterial).emissive.setHex(0x333333);
+          }
           selectedMeshRef.current = obj;
           setSelected({ mesh: obj, type: obj.userData.type || "group", params: obj.userData.params || {} });
           setTransform({
@@ -532,10 +952,13 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
       {selected && (
         <ObjectPanel 
+          key={selected.mesh.uuid}
           selected={selected.mesh} 
-          transform={transform} 
+          transform={transform}
+          simSize={simSize}
           onUpdate={updateTransformPanel}
           onClip={updateClipping}
+          onBevel={updateBevel}
           onDelete={deleteSelected}
         />
       )}

@@ -3,26 +3,47 @@ import * as THREE from "three";
 
 export default function DragMenu({ onStartDrag, onImportRBC }: any) {
 
-  // Funkcia na spracovanie 3 súborov pre Krvinku
+  // Funkcia na spracovanie 2 súborov pre model bunky (CTC/RBC)
+  // Formát: *nodes*.dat  – každý riadok "x y z"
+  //         *triangles*.dat – každý riadok "i j k" (0-based indexy)
   const handleRbcImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (files.length < 3) {
-      alert("Prosím, vyberte všetky 3 súbory naraz (body.dat, trojuholniky.dat, poz.txt)!");
+    if (files.length < 2) {
+      alert("Prosím, vyberte oba súbory naraz: *nodes*.dat a *triangles*.dat!");
       return;
     }
 
-    let bTxt = "", tTxt = "", pTxt = "";
+    let nodesTxt = "", triTxt = "";
     for (const f of files) {
       const text = await f.text();
-      if (f.name.includes("body")) bTxt = text;
-      if (f.name.includes("trojuholniky")) tTxt = text;
-      if (f.name.includes("poz")) pTxt = text;
+      if (f.name.toLowerCase().includes("nodes")) nodesTxt = text;
+      else if (f.name.toLowerCase().includes("triangles")) triTxt = text;
+      // fallback: pri neznámom názve hádame podľa poradia
+      else if (!nodesTxt) nodesTxt = text;
+      else triTxt = text;
+    }
+
+    if (!nodesTxt || !triTxt) {
+      alert("Nepodarilo sa rozlíšiť súbory. Súbory musia mať v názve 'nodes' a 'triangles'.");
+      return;
     }
 
     try {
-      const vertices = bTxt.trim().split(/\s+/).map(Number);
-      const indices = tTxt.trim().split(/\s+/).map(Number);
-      const pos = pTxt.trim().split(/\s+/).map(Number);
+      // Parsovanie uzlov – každý riadok "x y z"
+      const vertices: number[] = [];
+      for (const line of nodesTxt.trim().split(/\r?\n/)) {
+        const parts = line.trim().split(/\s+/).map(Number);
+        if (parts.length >= 3) vertices.push(parts[0], parts[1], parts[2]);
+      }
+
+      // Parsovanie trojuholníkov – každý riadok "i j k"
+      const indices: number[] = [];
+      for (const line of triTxt.trim().split(/\r?\n/)) {
+        const parts = line.trim().split(/\s+/).map(Number);
+        if (parts.length >= 3) indices.push(parts[0], parts[1], parts[2]);
+      }
+
+      const pos = [0, 0, 0];
 
       // 1. Membrána z trojuholníkov
       const geom = new THREE.BufferGeometry();
@@ -70,10 +91,10 @@ export default function DragMenu({ onStartDrag, onImportRBC }: any) {
       <div className="mt-6 pt-4 border-t border-slate-800">
         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Model Bunky</h3>
         <label className="block w-full bg-rose-900/30 hover:bg-rose-900/60 border border-rose-800 text-rose-400 p-3 rounded text-center text-[10px] font-bold cursor-pointer transition">
-          IMPORT (3 SÚBORY)
-          <input type="file" multiple onChange={handleRbcImport} className="hidden" />
+          IMPORT (2 SÚBORY)
+          <input type="file" multiple accept=".dat" onChange={handleRbcImport} className="hidden" />
         </label>
-        <p className="text-[9px] text-slate-600 mt-2 leading-tight">Vyberte naraz body.dat, trojuholniky.dat a poz.txt.</p>
+        <p className="text-[9px] text-slate-600 mt-2 leading-tight">Vyberte naraz *nodes*.dat a *triangles*.dat.</p>
       </div>
     </aside>
   );
