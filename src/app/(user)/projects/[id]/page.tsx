@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-export default function ProjectIdPage({ params }: { params: { id: string } }) {
+export default function ProjectIdPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: projectId } = use(params);
   const router = useRouter();
-  const projectId = params.id;
 
   // READ (routing)
   // táto stránka existuje len ako vstupný bod pre /projects/[id]

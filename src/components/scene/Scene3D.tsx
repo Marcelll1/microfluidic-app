@@ -3,11 +3,13 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
+import { CSG } from "three-csg-ts";
 import DragMenu from "./DragMenu";
 import ObjectPanel from "./ObjectPanel";
 import SceneGraph from "./SceneGraph";
 
-type ObjectType = "cube" | "cylinder" | "rbc" | "group";
+type ObjectType = "cube" | "cylinder" | "rbc" | "group" | "merged" | "__lb_settings__";
 
 interface DbObjectRow {
   id: string;
@@ -128,76 +130,102 @@ function applyClipWorldSpace(obj: THREE.Object3D, height: number, angleDeg: numb
 }
 
 // ── Per-edge bevel geometria ────────────────────────────────────────────────
-type EdgeGroup = "Všetky" | "Zvislé rohy" | "Horné hrany" | "Dolné hrany";
+// 12 hrán kocky: vert-fl, vert-fr, vert-bl, vert-br (zvislé)
+//                top-front, top-back, top-left, top-right  (horné)
+//                bot-front, bot-back, bot-left, bot-right  (dolné)
+type EdgeGroup = "Všetky" | "Zvislé rohy" | "Horné hrany" | "Dolné hrany" | "Bočné hrany"; // legacy
 
-function buildBevelGeometry(
+/** Vytvorí 2D tvar obdĺžnika (a×b) so selektívne zaobleným rohom (cr>0 = zaoblenie).
+ *  Poradie rohov:  BL(0,0)  BR(a,0)  TR(a,b)  TL(0,b) */
+function roundedRectShape(a: number, b: number, rBL: number, rBR: number, rTR: number, rTL: number): THREE.Shape {
+  const s = new THREE.Shape();
+  const clamp = (v: number, max1: number, max2: number) => Math.min(v, max1 / 2 - 0.001, max2 / 2 - 0.001);
+  const cBL = clamp(rBL, a, b), cBR = clamp(rBR, a, b), cTR = clamp(rTR, a, b), cTL = clamp(rTL, a, b);
+  s.moveTo(cBL, 0);
+  s.lineTo(a - cBR, 0);
+  if (cBR > 0) s.quadraticCurveTo(a, 0, a, cBR); else s.lineTo(a, 0);
+  s.lineTo(a, b - cTR);
+  if (cTR > 0) s.quadraticCurveTo(a, b, a - cTR, b); else s.lineTo(a, b);
+  s.lineTo(cTL, b);
+  if (cTL > 0) s.quadraticCurveTo(0, b, 0, b - cTL); else s.lineTo(0, b);
+  s.lineTo(0, cBL);
+  if (cBL > 0) s.quadraticCurveTo(0, 0, cBL, 0); else s.lineTo(cBL, 0);
+  return s;
+}
+
+/** Vybuduje geometriu kocky so zaoblením ľubovoľnej podmnožiny 12 hrán. */
+function buildBevelGeometryEdges(
   w: number, h: number, d: number,
-  r: number, group: EdgeGroup
+  r: number, edges: Set<string>
 ): THREE.BufferGeometry {
-  if (r <= 0) {
+  if (r <= 0 || edges.size === 0) {
     const g = new THREE.BoxGeometry(w, h, d);
     g.translate(w / 2, h / 2, d / 2);
     return g;
   }
-  if (group === "Všetky") {
-    const cr = Math.min(r, w / 2 - 0.001, h / 2 - 0.001, d / 2 - 0.001);
-    const g = new RoundedBoxGeometry(w, h, d, 4, cr);
+  const R = (id: string) => edges.has(id) ? r : 0;
+
+  // ─── Profil 1: zvislé hrany (vert-fl, vert-fr, vert-bl, vert-br) ────────
+  // Shape v local XY: a=X(0→w), b=Z(0→d). Extrude po local Z = výška h.
+  // rotateX(-PI/2): world(X,Y,Z) = local(a, extr, -b) → po translate(0,0,d): Z = d-b
+  // Takže: BL(a=0,b=0)→(0,?,d)=back-left, BR(w,0)=back-right, TR(w,d)=front-right, TL(0,d)=front-left
+  const s1 = roundedRectShape(w, d, R("vert-bl"), R("vert-br"), R("vert-fr"), R("vert-fl"));
+  const g1 = new THREE.ExtrudeGeometry(s1, { depth: h, bevelEnabled: false, curveSegments: 8 });
+  g1.rotateX(-Math.PI / 2);
+  g1.translate(0, 0, d);   // world: X∈[0,w], Y∈[0,h], Z∈[0,d] ✓
+
+  // ─── Profil 2: hrany rovnobežné so Z (top-left, top-right, bot-left, bot-right) ─
+  // Shape v local XY: a=X(0→w), b=Y(0→h). Extrude po local Z = hĺbka d.
+  // Žiadna rotácia: world = local.
+  // BL(0,0)=bot-left, BR(w,0)=bot-right, TR(w,h)=top-right, TL(0,h)=top-left
+  const s2 = roundedRectShape(w, h, R("bot-left"), R("bot-right"), R("top-right"), R("top-left"));
+  const g2 = new THREE.ExtrudeGeometry(s2, { depth: d, bevelEnabled: false, curveSegments: 8 });
+  // g2: X∈[0,w], Y∈[0,h], Z∈[0,d] ✓ (bez rotácie)
+
+  // ─── Profil 3: hrany rovnobežné s X (top-front, top-back, bot-front, bot-back) ──
+  // Shape v local XY: a=Z(0→d), b=Y(0→h). Extrude po local Z = šírka w.
+  // rotateY(-PI/2): world(X,Y,Z) = local(extr, b, -a) → po translate(0,0,d): Z = d-a
+  // BL(a=0,b=0)→(?,0,d)=bot-back, BR(d,0)=bot-front, TR(d,h)=top-front, TL(0,h)=top-back
+  const s3 = roundedRectShape(d, h, R("bot-back"), R("bot-front"), R("top-front"), R("top-back"));
+  const g3 = new THREE.ExtrudeGeometry(s3, { depth: w, bevelEnabled: false, curveSegments: 8 });
+  g3.rotateY(Math.PI / 2);
+  g3.translate(0, 0, d);   // world: X∈[0,w], Y∈[0,h], Z∈[0,d] ✓
+
+  // ─── CSG intersect všetkých 3 profilov ─────────────────────────────────
+  try {
+    const mat = new THREE.MeshStandardMaterial();
+    const m1 = new THREE.Mesh(g1, mat); m1.updateMatrixWorld(true);
+    const m2 = new THREE.Mesh(g2, mat); m2.updateMatrixWorld(true);
+    const m3 = new THREE.Mesh(g3, mat); m3.updateMatrixWorld(true);
+    let result = CSG.intersect(m1, m2);
+    result.updateMatrixWorld(true);
+    result = CSG.intersect(result, m3);
+    return result.geometry;
+  } catch {
+    const g = new THREE.BoxGeometry(w, h, d);
     g.translate(w / 2, h / 2, d / 2);
     return g;
   }
-  if (group === "Zvislé rohy") {
-    // Zaoblený obdĺžnik v XZ rovine, extrudovaný po Y
-    const cr = Math.min(r, w / 2 - 0.001, d / 2 - 0.001);
-    const shape = new THREE.Shape();
-    shape.moveTo(cr, 0);
-    shape.lineTo(w - cr, 0);
-    shape.quadraticCurveTo(w, 0, w, cr);
-    shape.lineTo(w, d - cr);
-    shape.quadraticCurveTo(w, d, w - cr, d);
-    shape.lineTo(cr, d);
-    shape.quadraticCurveTo(0, d, 0, d - cr);
-    shape.lineTo(0, cr);
-    shape.quadraticCurveTo(0, 0, cr, 0);
-    const g = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 8 });
-    g.rotateX(-Math.PI / 2);
-    g.translate(0, 0, d);
-    return g;
+}
+
+/** Legacy helper – konvertuje starý EdgeGroup string na Set hrán */
+function edgeGroupToSet(group: EdgeGroup | string | undefined): Set<string> {
+  switch (group) {
+    case "Všetky":      return new Set(["vert-fl","vert-fr","vert-bl","vert-br","top-front","top-back","top-left","top-right","bot-front","bot-back","bot-left","bot-right"]);
+    case "Zvislé rohy": return new Set(["vert-fl","vert-fr","vert-bl","vert-br"]);
+    case "Horné hrany": return new Set(["top-front","top-back","top-left","top-right"]);
+    case "Dolné hrany": return new Set(["bot-front","bot-back","bot-left","bot-right"]);
+    case "Bočné hrany": return new Set(["top-left","top-right","bot-left","bot-right"]);
+    default: return new Set();
   }
-  if (group === "Horné hrany") {
-    // Profil ZY s zaobleným vrchom, extrudovaný po X
-    const cr = Math.min(r, d / 2 - 0.001, h / 2 - 0.001);
-    const shape = new THREE.Shape();
-    shape.moveTo(0, 0);
-    shape.lineTo(d, 0);
-    shape.lineTo(d, h - cr);
-    shape.quadraticCurveTo(d, h, d - cr, h);
-    shape.lineTo(cr, h);
-    shape.quadraticCurveTo(0, h, 0, h - cr);
-    shape.lineTo(0, 0);
-    const g = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false, curveSegments: 8 });
-    g.rotateY(Math.PI / 2);
-    g.translate(0, 0, d);
-    return g;
-  }
-  if (group === "Dolné hrany") {
-    // Profil ZY so zaobleným spodkom, extrudovaný po X
-    const cr = Math.min(r, d / 2 - 0.001, h / 2 - 0.001);
-    const shape = new THREE.Shape();
-    shape.moveTo(cr, 0);
-    shape.quadraticCurveTo(0, 0, 0, cr);
-    shape.lineTo(0, h);
-    shape.lineTo(d, h);
-    shape.lineTo(d, cr);
-    shape.quadraticCurveTo(d, 0, d - cr, 0);
-    shape.lineTo(cr, 0);
-    const g = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false, curveSegments: 8 });
-    g.rotateY(Math.PI / 2);
-    g.translate(0, 0, d);
-    return g;
-  }
-  const fallback = new THREE.BoxGeometry(w, h, d);
-  fallback.translate(w / 2, h / 2, d / 2);
-  return fallback;
+}
+
+/** Backward-compat wrapper pre starý kód ktorý stále posiela EdgeGroup */
+function buildBevelGeometry(
+  w: number, h: number, d: number,
+  r: number, group: EdgeGroup
+): THREE.BufferGeometry {
+  return buildBevelGeometryEdges(w, h, d, r, edgeGroupToSet(group));
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -216,13 +244,21 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
   const [simSize, setSimSize] = useState({ x: 10, y: 10, z: 10 });
   const [showLB, setShowLB] = useState(true);
   const [lbColor, setLbColor] = useState("#4466aa");
-  const [lbSpacing, setLbSpacing] = useState(1);
+  const [lbDensity, setLbDensity] = useState(1); // body na jednotku dĺžky (1/spacing)
+
+  // Globálne parametre scény (napr. v = 5, použiteľné v objektoch)
+  const [sceneParams, setSceneParams] = useState<{ name: string; value: number }[]>([]);
 
   // Refy pre pôvodnú logiku hýbania
+  const simSizeRef = useRef(simSize);
+  simSizeRef.current = simSize; // vždy aktuálna hodnota bez re-init efektu
   const selectedMeshRef = useRef<THREE.Object3D | null>(null);
   const isDraggingRef = useRef(false);
   const patchTimerRef = useRef<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // Multi-výber pre zlúčenie objektov
+  const [multiSelect, setMultiSelect] = useState<string[]>([]);
+  const multiSelectRef = useRef<string[]>([]);
 
   // Funkcia na aktualizáciu zoznamu objektov
   const syncObjectsList = useCallback(() => {
@@ -274,15 +310,29 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         geom.setIndex(indices);
         geom.computeVertexNormals();
       }
-      const membraneMat = new THREE.MeshStandardMaterial({ color: 0xaa2222, side: THREE.DoubleSide });
+      const membraneMat = new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
       const membraneMesh = new THREE.Mesh(geom, membraneMat);
-
-      const sphereGeom = new THREE.SphereGeometry(0.3, 16, 16);
-      const sphereMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-      const sphereMesh = new THREE.Mesh(sphereGeom, sphereMat);
 
       const group = new THREE.Group();
       group.add(membraneMesh);
+
+      // Hrany + body membrámy – len keď geom obsahuje dáta
+      if (vertices && indices) {
+        const wireframeGeo = new THREE.WireframeGeometry(geom);
+        const wireframeMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1 });
+        const wireframe = new THREE.LineSegments(wireframeGeo, wireframeMat);
+        wireframe.name = "__rbc_wireframe__";
+        group.add(wireframe);
+
+        const pointsMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.04 });
+        const rbcPoints = new THREE.Points(geom, pointsMat);
+        rbcPoints.name = "__rbc_points__";
+        group.add(rbcPoints);
+      }
+
+      const sphereGeom = new THREE.SphereGeometry(0.3, 16, 16);
+      const sphereMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+      const sphereMesh = new THREE.Mesh(sphereGeom, sphereMat);
       group.add(sphereMesh);
       group.position.set(row.pos_x, row.pos_y, row.pos_z);
       group.rotation.set(p.rotX || 0, row.rotation_y, p.rotZ || 0);
@@ -299,13 +349,38 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       return group;
     }
 
+    // --- Rekonštrukcia zlúčeného objektu zo uložených částí (CSG union) ---
+    if (row.type === "merged") {
+      const parts = (p.parts || []) as any[];
+      const buildPartMesh = (part: any): THREE.Mesh => {
+        const pp = part.params || {};
+        let geom: THREE.BufferGeometry;
+        if (String(part.type || "").toLowerCase() === "cube") {
+          const edges2 = pp.bevelEdges ? new Set<string>(pp.bevelEdges as string[]) : edgeGroupToSet((pp.bevelGroup as EdgeGroup) || "Všetky");
+          geom = buildBevelGeometryEdges(pp.width||1, pp.height||1, pp.depth||1, pp.bevelRadius||0, edges2);
+        } else {
+          geom = new THREE.CylinderGeometry(pp.radiusTop||0.5, pp.radiusBottom||0.5, pp.height||1, 32);
+        }
+        const m = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color: 0x886622 }));
+        m.position.set(part.pos_x, part.pos_y, part.pos_z);
+        m.rotation.set(pp.rotX||0, part.rotation_y||0, pp.rotZ||0);
+        m.updateMatrix();
+        return m;
+      };
+      let result = parts.length > 0 ? buildPartMesh(parts[0]) : new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: 0x886622 }));
+      for (let i = 1; i < parts.length; i++) result = CSG.union(result, buildPartMesh(parts[i]));
+      result.position.set(row.pos_x, row.pos_y, row.pos_z);
+      result.userData = { interactable: true, type: "merged", params: row.params || {}, dbId: row.id, name: p.name || "Zlúčený objekt", clipHeight: 0, clipAngle: 0 };
+      return result;
+    }
+
     let geometry: THREE.BufferGeometry;
     const bevel = p.bevelRadius || 0;
     const w = p.width || 1, h = p.height || 1, d = p.depth || 1;
 
     if (row.type === "cube") {
-      const edgeGroup: EdgeGroup = (p.bevelGroup as EdgeGroup) || "Všetky";
-      geometry = buildBevelGeometry(w, h, d, bevel, edgeGroup);
+      const edges = p.bevelEdges ? new Set<string>(p.bevelEdges as string[]) : edgeGroupToSet((p.bevelGroup as EdgeGroup) || "Všetky");
+      geometry = buildBevelGeometryEdges(w, h, d, bevel, edges);
     } else {
       geometry = new THREE.CylinderGeometry(p.radiusTop || 0.5, p.radiusBottom || 0.5, p.height || 1, 32);
     }
@@ -357,7 +432,19 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       const res = await fetch(`/api/objects?project_id=${projectId}`);
       if (res.ok) {
         const data = await res.json() as DbObjectRow[];
-        data.forEach(row => scene.add(createMeshFromRow(row)));
+        // Obnov LB nastavenia zo špeciálneho záznamu
+        const lbRow = data.find(r => r.type === "__lb_settings__");
+        if (lbRow?.params) {
+          const p = lbRow.params as any;
+          if (p.simSize)   setSimSize(p.simSize);
+          if (p.lbDensity !== undefined) setLbDensity(p.lbDensity);
+          if (p.lbColor)   setLbColor(p.lbColor);
+          if (p.showLB    !== undefined) setShowLB(p.showLB);
+        }
+        // Render iba reálnych objektov
+        data
+          .filter(r => r.type !== "__lb_settings__")
+          .forEach(row => scene.add(createMeshFromRow(row)));
       }
     }
     syncObjectsList();
@@ -377,8 +464,9 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     const group = new THREE.Group();
     group.name = "lbSystem";
 
-    // 1. Podlaha (GridHelper) – počet delení podľa lbSpacing
-    const gridDivs = Math.max(1, Math.round(Math.max(simSize.x, simSize.z) / lbSpacing));
+    // 1. Podlaha (GridHelper) – počet delení podľa hustoty
+    const lbSpacing = lbDensity > 0 ? 1 / lbDensity : 1; // prevod hustota → vzdialenosť
+    const gridDivs = Math.max(1, Math.round(Math.max(simSize.x, simSize.z) * lbDensity));
     const gridHelper = new THREE.GridHelper(Math.max(simSize.x, simSize.z), gridDivs, lbColor, "#222233");
     gridHelper.position.set(simSize.x / 2, 0, simSize.z / 2);
     group.add(gridHelper);
@@ -390,9 +478,9 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     boxLines.position.set(simSize.x / 2, simSize.y / 2, simSize.z / 2);
     group.add(boxLines);
 
-    // 3. Lattice Body – hustota bodov podľa lbSpacing
+    // 3. Lattice Body – hustota bodov podľa lbDensity (body/jednotku)
     const pts: number[] = [];
-    const sp = Math.max(0.1, lbSpacing);
+    const sp = Math.max(0.01, lbSpacing);
     for (let x = 0; x <= simSize.x + 1e-9; x += sp) {
       for (let y = 0; y <= simSize.y + 1e-9; y += sp) {
         for (let z = 0; z <= simSize.z + 1e-9; z += sp) {
@@ -407,7 +495,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     group.add(latticePoints);
 
     scene.add(group);
-  }, [simSize, showLB, lbColor, lbSpacing]);
+  }, [simSize, showLB, lbColor, lbDensity]);
 
   // --- THREE.JS INITIALIZATION ---
   useEffect(() => {
@@ -419,7 +507,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 1000);
-    camera.position.set(simSize.x, simSize.y + 5, simSize.z + 10);
+    camera.position.set(simSizeRef.current.x, simSizeRef.current.y + 5, simSizeRef.current.z + 10);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
@@ -480,13 +568,33 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     const onClick = (e: MouseEvent) => {
       if (isDraggingRef.current) { isDraggingRef.current = false; return; }
       const obj = pickMesh(e);
+
+      // Shift+click = pridaj/odoober z multi-výberu
+      if (e.shiftKey && obj) {
+        const uuid = obj.uuid;
+        const alreadyIn = multiSelectRef.current.includes(uuid);
+        const next = alreadyIn
+          ? multiSelectRef.current.filter(id => id !== uuid)
+          : [...multiSelectRef.current, uuid];
+        multiSelectRef.current = next;
+        setMultiSelect([...next]);
+        if (obj instanceof THREE.Mesh) {
+          (obj.material as THREE.MeshStandardMaterial).emissive.setHex(alreadyIn ? 0x000000 : 0x113322);
+        }
+        return;
+      }
+
+      // Normálny klik – zruš multi-výber
+      multiSelectRef.current = [];
+      setMultiSelect([]);
+
       if (!obj) {
         clearHighlight();
         selectedMeshRef.current = null;
         setSelected(null);
         return;
       }
-      
+
       clearHighlight();
       if (obj instanceof THREE.Mesh) {
         (obj.material as THREE.MeshStandardMaterial).emissive.setHex(0x333333);
@@ -524,8 +632,8 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       let sZ = snap(intersection.z, 0.1);
       
       // Ohraničenie voči LB sieti
-      sX = Math.max(0, Math.min(sX, simSize.x));
-      sZ = Math.max(0, Math.min(sZ, simSize.z));
+      sX = Math.max(0, Math.min(sX, simSizeRef.current.x));
+      sZ = Math.max(0, Math.min(sZ, simSizeRef.current.z));
 
       const mesh = selectedMeshRef.current;
       mesh.position.set(sX, mesh.position.y, sZ);
@@ -558,9 +666,9 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       mesh.position.addScaledVector(dir, delta);
       
       // Znovu ohraničenie
-      mesh.position.x = Math.max(0, Math.min(snap(mesh.position.x, 0.1), simSize.x));
-      mesh.position.y = Math.max(0, Math.min(snap(mesh.position.y, 0.1), simSize.y));
-      mesh.position.z = Math.max(0, Math.min(snap(mesh.position.z, 0.1), simSize.z));
+      mesh.position.x = Math.max(0, Math.min(snap(mesh.position.x, 0.1), simSizeRef.current.x));
+      mesh.position.y = Math.max(0, Math.min(snap(mesh.position.y, 0.1), simSizeRef.current.y));
+      mesh.position.z = Math.max(0, Math.min(snap(mesh.position.z, 0.1), simSizeRef.current.z));
 
       setTransform(prev => ({ ...prev, x: mesh.position.x, y: mesh.position.y, z: mesh.position.z }));
       patchSelectedDebounced({ pos_x: mesh.position.x, pos_y: mesh.position.y, pos_z: mesh.position.z });
@@ -593,7 +701,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       renderer.domElement.removeEventListener("wheel", onWheel);
       mount.removeChild(renderer.domElement);
     };
-  }, [simSize, loadScene, patchSelectedDebounced]);
+  }, [loadScene, patchSelectedDebounced]);
 
   // Kreslenie LB siete pri zmene parametrov
   useEffect(() => {
@@ -672,6 +780,79 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     }
   }, [dragType, projectId, simSize, createObjectInDB, syncObjectsList]);
 
+  // --- ZLÚČENIE OBJEKTOV (CSG union) ---
+  const mergeSelected = useCallback(async () => {
+    if (!sceneRef.current || multiSelectRef.current.length < 2) return;
+    const scene = sceneRef.current;
+
+    const objs = multiSelectRef.current
+      .map(uuid => scene.children.find(c => c.uuid === uuid))
+      .filter(Boolean) as THREE.Object3D[];
+
+    const meshes = objs.filter(m => m instanceof THREE.Mesh) as THREE.Mesh[];
+    if (meshes.length < 2) {
+      alert("Zlúčenie funguje len pre kocky a valce (nie RBC bunky).");
+      return;
+    }
+
+    // Ulož pôvodné časti pre export
+    const parts = meshes.map(m => ({
+      type: m.userData.type as string,
+      pos_x: m.position.x, pos_y: m.position.y, pos_z: m.position.z,
+      rotation_y: m.rotation.y,
+      params: { ...(m.userData.params || {}), rotX: m.rotation.x, rotZ: m.rotation.z },
+    }));
+
+    // CSG union – spoj všetky vybrané meshe
+    let result = meshes[0].clone() as THREE.Mesh;
+    result.updateMatrix();
+    for (let i = 1; i < meshes.length; i++) {
+      const next = meshes[i].clone() as THREE.Mesh;
+      next.updateMatrix();
+      result = CSG.union(result, next);
+    }
+    // Nastav materiál výsledku
+    (result.material as THREE.MeshStandardMaterial).color.setHex(0x886622);
+
+    const mergedCount = scene.children.filter(c => c.userData?.type === "merged").length;
+    const mergedName = `Zlúčený${mergedCount + 1}`;
+    const mergedParams = { parts, name: mergedName };
+    result.userData = { interactable: true, type: "merged" as ObjectType, params: mergedParams, dbId: undefined, name: mergedName, clipHeight: 0, clipAngle: 0 };
+
+    // Zmaž pôvodné objekty
+    for (const m of meshes) {
+      scene.remove(m);
+      if (m.userData.dbId && projectId) {
+        await fetch(`/api/objects/${m.userData.dbId}`, { method: "DELETE" }).catch(() => {});
+      }
+    }
+
+    scene.add(result);
+    multiSelectRef.current = [];
+    setMultiSelect([]);
+    selectedMeshRef.current = result;
+    setSelected({ mesh: result, type: "merged" as ObjectType, params: mergedParams });
+    setTransform({ x: result.position.x, y: result.position.y, z: result.position.z, rotX: 0, rotY: 0, rotZ: 0 });
+    syncObjectsList();
+
+    if (projectId) {
+      try {
+        const created = await createObjectInDB({
+          project_id: projectId, type: "merged",
+          pos_x: result.position.x, pos_y: result.position.y, pos_z: result.position.z,
+          rotation_y: 0, params: mergedParams,
+        });
+        result.userData.dbId = created.id;
+      } catch (err: any) { alert(err?.message); }
+    } else {
+      const allObjs = scene.children.filter(c => c.userData?.interactable);
+      localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(allObjs.map(m => ({
+        type: m.userData.type, pos_x: m.position.x, pos_y: m.position.y, pos_z: m.position.z,
+        rotation_y: m.rotation.y, params: m.userData.params ?? {},
+      }))));
+    }
+  }, [projectId, createObjectInDB, syncObjectsList]);
+
   // --- IMPORT RBC BUNKY (Guľa + Membrána = Group) ---
   const handleImportRBC = useCallback(async (rbcGroup: THREE.Group) => {
     if (!sceneRef.current) return;
@@ -745,7 +926,14 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
     setSaveStatus("saving");
     try {
-      const objects = meshes.map(m => ({
+      const objects = [
+        // Špeciálny záznam pre LB nastavenia
+        {
+          type: "__lb_settings__",
+          pos_x: 0, pos_y: 0, pos_z: 0, rotation_y: 0,
+          params: { simSize, lbDensity, lbColor, showLB },
+        },
+        ...meshes.map(m => ({
         type: m.userData.type ?? "cube",
         pos_x: m.position.x, pos_y: m.position.y, pos_z: m.position.z,
         rotation_y: m.rotation.y,
@@ -760,7 +948,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
           bevelRadius: m.userData.bevelRadius ?? 0,
           bevelGroup: m.userData.bevelGroup ?? "Všetky",
         },
-      }));
+      }))];
 
       const res = await fetch("/api/objects", {
         method: "POST",
@@ -787,7 +975,33 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     } finally {
       setTimeout(() => setSaveStatus("idle"), 2500);
     }
-  }, [projectId]);
+  }, [projectId, simSize, lbDensity, lbColor, showLB]);
+
+  // --- STL EXPORT PRE PARAVIEW ---
+  const exportSTL = useCallback(() => {
+    if (!sceneRef.current) return;
+    const scene = sceneRef.current;
+
+    // Exportuj len interaktívne objekty (nie mriežku, svetlá a pod.)
+    const exportScene = new THREE.Scene();
+    scene.children
+      .filter(c => c.userData?.interactable === true)
+      .forEach(obj => {
+        // Klon s aplikovanými world-space transformáciami
+        const clone = obj.clone(true);
+        exportScene.add(clone);
+      });
+
+    const exporter = new STLExporter();
+    const stlBinary = exporter.parse(exportScene, { binary: true }) as unknown as ArrayBuffer;
+    const blob = new Blob([stlBinary], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "model.stl";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
 
   // --- DELETE & UPDATE ---
   const deleteSelected = useCallback(async () => {
@@ -803,11 +1017,70 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     }
   }, [projectId, syncObjectsList]);
 
+  // --- COPY / PASTE ---
+  const copiedObjectRef = useRef<any>(null);
+
+  const copySelected = useCallback(() => {
+    const mesh = selectedMeshRef.current;
+    if (!mesh) return;
+    copiedObjectRef.current = {
+      type: mesh.userData.type,
+      pos_x: mesh.position.x,
+      pos_y: mesh.position.y,
+      pos_z: mesh.position.z,
+      rotation_y: mesh.rotation.y,
+      params: JSON.parse(JSON.stringify(mesh.userData.params || {})),
+      paramExprs: JSON.parse(JSON.stringify(mesh.userData.paramExprs || {})),
+      scale: { x: mesh.scale.x, y: mesh.scale.y, z: mesh.scale.z },
+    };
+  }, []);
+
+  const pasteObject = useCallback(async () => {
+    const src = copiedObjectRef.current;
+    if (!src || !sceneRef.current) return;
+    const offset = 1;
+    const fakeRow: any = {
+      id: "__paste__",
+      project_id: projectId ?? "",
+      type: src.type,
+      pos_x: src.pos_x + offset,
+      pos_y: src.pos_y,
+      pos_z: src.pos_z + offset,
+      rotation_y: src.rotation_y,
+      params: { ...src.params },
+    };
+    const newMesh = createMeshFromRow(fakeRow);
+    newMesh.userData.dbId = undefined;
+    newMesh.userData.paramExprs = src.paramExprs;
+    newMesh.scale.set(src.scale.x, src.scale.y, src.scale.z);
+    sceneRef.current.add(newMesh);
+    syncObjectsList();
+    // Select new mesh
+    selectedMeshRef.current = newMesh;
+    setSelected({ mesh: newMesh as any, type: src.type, params: fakeRow.params });
+    setTransform({ x: fakeRow.pos_x, y: fakeRow.pos_y, z: fakeRow.pos_z, rotX: 0, rotY: 0, rotZ: 0 });
+    if (projectId) {
+      try {
+        const created = await createObjectInDB({
+          project_id: projectId, type: src.type,
+          pos_x: fakeRow.pos_x, pos_y: fakeRow.pos_y, pos_z: fakeRow.pos_z,
+          rotation_y: fakeRow.rotation_y,
+          params: fakeRow.params,
+        });
+        newMesh.userData.dbId = created.id;
+      } catch (err: any) { alert(err?.message); }
+    }
+  }, [projectId, createObjectInDB, createMeshFromRow, syncObjectsList]);
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Delete") void deleteSelected(); };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Delete") void deleteSelected();
+      if (e.ctrlKey && e.key === "c") copySelected();
+      if (e.ctrlKey && e.key === "v") void pasteObject();
+    };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteSelected]);
+  }, [deleteSelected, copySelected, pasteObject]);
 
   const updateTransformPanel = (field: string, value: number) => {
     if (!selectedMeshRef.current) return;
@@ -822,10 +1095,14 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     if (field === 'rotX') mesh.rotation.x = THREE.MathUtils.degToRad(v);
     if (field === 'rotY') mesh.rotation.y = THREE.MathUtils.degToRad(v);
     if (field === 'rotZ') mesh.rotation.z = THREE.MathUtils.degToRad(v);
+    if (field === 'scaleX') mesh.scale.x = Math.max(0.01, v);
+    if (field === 'scaleY') mesh.scale.y = Math.max(0.01, v);
+    if (field === 'scaleZ') mesh.scale.z = Math.max(0.01, v);
 
     setTransform(prev => ({ ...prev, [field]: v }));
 
-    mesh.userData.params = { ...mesh.userData.params, rotX: mesh.rotation.x, rotZ: mesh.rotation.z };
+    mesh.userData.params = { ...mesh.userData.params, rotX: mesh.rotation.x, rotZ: mesh.rotation.z,
+      scaleX: mesh.scale.x, scaleY: mesh.scale.y, scaleZ: mesh.scale.z };
     patchSelectedDebounced({
       pos_x: mesh.position.x, pos_y: mesh.position.y, pos_z: mesh.position.z,
       rotation_y: mesh.rotation.y,
@@ -837,6 +1114,36 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       applyClipWorldSpace(mesh, mesh.userData.clipHeight || 0, mesh.userData.clipAngle || 0);
     }
   };
+
+  // Aktualizácia rozmerov (width/height/depth/radius) vybraného objektu
+  const updateDimensions = useCallback((updatedParams: Record<string, number>) => {
+    const mesh = selectedMeshRef.current;
+    if (!mesh) return;
+    const type = mesh.userData.type as ObjectType;
+    const oldParams = mesh.userData.params || {};
+    const newParams = { ...oldParams, ...updatedParams };
+
+    if (type === "cube" && mesh instanceof THREE.Mesh) {
+      const { width = 1, height = 1, depth = 1, bevelRadius = 0, bevelEdges, bevelGroup } = newParams;
+      const edges = bevelEdges ? new Set<string>(bevelEdges as string[]) : edgeGroupToSet(bevelGroup as EdgeGroup);
+      mesh.geometry.dispose();
+      mesh.geometry = buildBevelGeometryEdges(width, height, depth, bevelRadius, edges);
+      if (newParams.clipHeight || newParams.clipAngle) {
+        applyClipWorldSpace(mesh, newParams.clipHeight || 0, newParams.clipAngle || 0);
+      }
+    } else if (type === "cylinder" && mesh instanceof THREE.Mesh) {
+      const { radiusTop = 0.5, radiusBottom = 0.5, height = 1 } = newParams;
+      mesh.geometry.dispose();
+      mesh.geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 32);
+      if (newParams.clipHeight || newParams.clipAngle) {
+        applyClipWorldSpace(mesh, newParams.clipHeight || 0, newParams.clipAngle || 0);
+      }
+    }
+
+    mesh.userData.params = newParams;
+    setSelected(prev => prev ? { ...prev, params: newParams } : prev);
+    patchSelectedDebounced({ params: newParams });
+  }, [patchSelectedDebounced]);
 
   const updateClipping = (height: number, angleDeg: number) => {
     const mesh = selectedMeshRef.current;
@@ -854,18 +1161,18 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     patchSelectedDebounced({ params: mesh.userData.params });
   };
 
-  const updateBevel = (edgeGroup: EdgeGroup, radius: number) => {
+  const updateBevel = (edges: Set<string>, radius: number) => {
     const mesh = selectedMeshRef.current;
     if (!mesh || !(mesh instanceof THREE.Mesh) || mesh.userData.type !== "cube") return;
     const p = mesh.userData.params || {};
     const w = p.width || 1, h = p.height || 1, d = p.depth || 1;
 
     if (mesh.geometry) mesh.geometry.dispose();
-    mesh.geometry = buildBevelGeometry(w, h, d, radius, edgeGroup);
+    mesh.geometry = buildBevelGeometryEdges(w, h, d, radius, edges);
 
     mesh.userData.bevelRadius = radius;
-    mesh.userData.bevelGroup = edgeGroup;
-    mesh.userData.params = { ...mesh.userData.params, bevelRadius: radius, bevelGroup: edgeGroup };
+    mesh.userData.bevelEdges = Array.from(edges);
+    mesh.userData.params = { ...mesh.userData.params, bevelRadius: radius, bevelEdges: Array.from(edges) };
 
     if (mesh.userData.clipHeight || mesh.userData.clipAngle) {
       applyClipWorldSpace(mesh, mesh.userData.clipHeight || 0, mesh.userData.clipAngle || 0);
@@ -896,14 +1203,23 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         </div>
         <div className="w-px h-8 bg-slate-700"></div>
         <div className="flex flex-col">
-          <label className="text-[10px] text-sky-400 font-bold uppercase mb-1">Hustota LB bodov</label>
+          <label className="text-[10px] text-sky-400 font-bold uppercase mb-1">Hustota LB (b/j)</label>
           <input
             type="number" min="0.1" step="0.1"
-            value={lbSpacing}
-            onChange={e => setLbSpacing(Math.max(0.1, +e.target.value))}
+            value={lbDensity}
+            onChange={e => setLbDensity(Math.max(0.1, +e.target.value))}
             className="w-16 bg-black border border-slate-600 rounded p-1 text-white text-xs text-center"
           />
         </div>
+        <div className="w-px h-8 bg-slate-700"></div>
+        {/* Export STL pre ParaView */}
+        <button
+          onClick={() => exportSTL()}
+          className="px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition border bg-violet-800 hover:bg-violet-600 border-violet-600 text-white"
+          title="Exportuj scénu ako STL súbor pre ParaView"
+        >
+          Export STL
+        </button>
         <div className="w-px h-8 bg-slate-700"></div>
         {/* Save Scene */}
         <button
@@ -922,7 +1238,12 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         </button>
       </div>
 
-      <DragMenu onStartDrag={(t: ObjectType) => setDragType(t)} onImportRBC={handleImportRBC} />
+      <DragMenu
+        onStartDrag={(t: string) => setDragType(t as ObjectType)}
+        onImportRBC={handleImportRBC}
+        sceneParams={sceneParams}
+        onParamsChange={setSceneParams}
+      />
 
       <SceneGraph 
         objects={objects} 
@@ -947,6 +1268,25 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         }}
       />
 
+      {/* Multi-výber – lišta Zlúčiť */}
+      {multiSelect.length >= 2 && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-slate-900/95 border border-emerald-600 rounded-xl px-5 py-2.5 shadow-2xl">
+          <span className="text-xs text-emerald-300 font-bold">{multiSelect.length} objekty vybrané</span>
+          <button
+            onClick={() => void mergeSelected()}
+            className="bg-emerald-700 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded transition"
+          >
+            ⊕ Zlúčiť do 1 tvaru
+          </button>
+          <button
+            onClick={() => { multiSelectRef.current = []; setMultiSelect([]); }}
+            className="bg-slate-700 hover:bg-slate-500 text-slate-300 text-xs px-2.5 py-1.5 rounded transition"
+          >
+            Zrušiť
+          </button>
+        </div>
+      )}
+
       {/* Renderovacia zóna s obnoveným dropom */}
       <div ref={mountRef} className="flex-1" onDragOver={e => e.preventDefault()} onDrop={handleDrop} />
 
@@ -956,7 +1296,9 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
           selected={selected.mesh} 
           transform={transform}
           simSize={simSize}
+          sceneParams={sceneParams}
           onUpdate={updateTransformPanel}
+          onDimUpdate={updateDimensions}
           onClip={updateClipping}
           onBevel={updateBevel}
           onDelete={deleteSelected}

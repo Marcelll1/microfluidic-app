@@ -225,6 +225,26 @@ export default function ProjectsPage() {
     router.push("/dashboard");
   }
 
+  // Exportuje projekt ako VTK subor pre ParaView
+  async function exportVTK(id: string) {
+    const res = await fetch(`/api/projects/${id}/export-vtk`);
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      alert(`VTK export zlyhal: ${t}`);
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    // zistime nazov suboru z hlavicky Content-Disposition ak je dostupna
+    const cd = res.headers.get("Content-Disposition") ?? "";
+    const match = cd.match(/filename="([^"]+)"/);
+    a.download = match?.[1] ?? `project_${id}.vtk`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   //exportuje projekt ako JSON subor pomocou api/projects/:id/export
   async function exportProject(id: string) {
     const res = await fetch(`/api/projects/${id}/export`); // READ (export)
@@ -344,6 +364,10 @@ export default function ProjectsPage() {
 
                     <button onClick={() => exportProject(p.id)} className="button-secondary">
                       Export JSON
+                    </button>
+
+                    <button onClick={() => void exportVTK(p.id)} className="button-secondary">
+                      Export VTK
                     </button>
 
                     <button

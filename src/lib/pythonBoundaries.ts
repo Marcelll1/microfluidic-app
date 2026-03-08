@@ -79,6 +79,32 @@ export function generatePythonBoundaries(objects: DbObj[]) {
       continue;
     }
 
+    // Zlúčený objekt – každá časť ako samostatná hranica (v LB simulácii sa prirodzene zlučujú)
+    if (t === "merged") {
+      const parts = (p.parts || []) as any[];
+      lines.push(`# object ${idx}: Merged (${parts.length} parts)`);
+      for (let pi = 0; pi < parts.length; pi++) {
+        const part = parts[pi];
+        const pp = part.params || {};
+        const pt = String(part.type || "").toLowerCase();
+        if (pt === "cube" || pt === "rhomboid") {
+          const w = f(pp.width ?? 1), h = f(pp.height ?? 1), d = f(pp.depth ?? 1);
+          lines.push(`# merged part ${pi + 1}: Rhomboid`);
+          lines.push(`tmp_shape = shapes.Rhomboid(corner=[${f(part.pos_x)}, ${f(part.pos_y)}, ${f(part.pos_z)}], a=[${w}, 0.0, 0.0], b=[0.0, ${h}, 0.0], c=[0.0, 0.0, ${d}], direction=1)`);
+          lines.push("boundaries.append(tmp_shape)");
+          lines.push("");
+        } else if (pt === "cylinder") {
+          const radius = f(pp.radiusTop ?? pp.radius ?? 0.5);
+          const length = f(pp.height ?? 1);
+          lines.push(`# merged part ${pi + 1}: Cylinder`);
+          lines.push(`tmp_shape = shapes.Cylinder(center=[${f(part.pos_x)}, ${f(part.pos_y)}, ${f(part.pos_z)}], axis=[0.0, 0.0, 1.0], length=${length}, radius=${radius}, direction=1)`);
+          lines.push("boundaries.append(tmp_shape)");
+          lines.push("");
+        }
+      }
+      continue;
+    }
+
     // iné typy ignoruj
   }
 
