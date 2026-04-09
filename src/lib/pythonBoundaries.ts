@@ -258,7 +258,7 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
           let cy_val = ys[j]; let wy = ys[j+1] - ys[j];
           let cz_val = zs[k]; let wz = zs[k+1] - zs[k];
           
-          if (wx <= 0.0001 && wy <= 0.0001 && wz <= 0.0001) continue;
+          if (wx <= 0.0001 || wy <= 0.0001 || wz <= 0.0001) continue;
 
           let ones = (i===1?1:0) + (j===1?1:0) + (k===1?1:0);
 
