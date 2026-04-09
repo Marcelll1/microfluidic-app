@@ -260,31 +260,49 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
           
           if (wx <= 0.0001 || wy <= 0.0001 || wz <= 0.0001) continue;
 
+          // Aplikacia vnutorneho presahu na zaistenie prekryvu
+          let overlap = Math.min(0.2, Math.max(0.01, r * 0.4));
+          let x1 = cx_val; let x2 = cx_val + wx;
+          if (i === 0) x2 += overlap;
+          if (i === 2) x1 -= overlap;
+          
+          let y1 = cy_val; let y2 = cy_val + wy;
+          if (j === 0) y2 += overlap;
+          if (j === 2) y1 -= overlap;
+
+          let z1 = cz_val; let z2 = cz_val + wz;
+          if (k === 0) z2 += overlap;
+          if (k === 2) z1 -= overlap;
+
+          let mod_cx = x1; let mod_wx = x2 - x1;
+          let mod_cy = y1; let mod_wy = y2 - y1;
+          let mod_cz = z1; let mod_wz = z2 - z1;
+
           let ones = (i===1?1:0) + (j===1?1:0) + (k===1?1:0);
 
           if (ones >= 2) {
              // Core or face - solid block
-             let b_pt = eulerTransform(cx_val, cy_val, cz_val, rx, ry, rz);
-             outputRhomboid(`${namePrefix} (Block ${i}${j}${k})`, ox+b_pt[0], oy+b_pt[1], oz+b_pt[2], wx, wy, wz, rx, ry, rz);
+             let b_pt = eulerTransform(mod_cx, mod_cy, mod_cz, rx, ry, rz);
+             outputRhomboid(`${namePrefix} (Block ${i}${j}${k})`, ox+b_pt[0], oy+b_pt[1], oz+b_pt[2], mod_wx, mod_wy, mod_wz, rx, ry, rz);
           } else if (ones === 1) {
              // Edge
              if (isEdgeRounded(i, j, k)) {
                 if (i===1) {
                    // X edge
-                   let cp = eulerTransform(cx_val + wx/2, j===0?r:h-r, k===0?r:d-r, rx, ry, rz);
-                   outputCylinder(`${namePrefix} (CylX ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wx, r, rx, ry, rz - Math.PI/2);
+                   let cp = eulerTransform(mod_cx + mod_wx/2, j===0?r:h-r, k===0?r:d-r, rx, ry, rz);
+                   outputCylinder(`${namePrefix} (CylX ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], mod_wx, r, rx, ry, rz - Math.PI/2);
                 } else if (j===1) {
                    // Y edge
-                   let cp = eulerTransform(i===0?r:w-r, cy_val + wy/2, k===0?r:d-r, rx, ry, rz);
-                   outputCylinder(`${namePrefix} (CylY ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wy, r, rx, ry, rz);
+                   let cp = eulerTransform(i===0?r:w-r, mod_cy + mod_wy/2, k===0?r:d-r, rx, ry, rz);
+                   outputCylinder(`${namePrefix} (CylY ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], mod_wy, r, rx, ry, rz);
                 } else if (k===1) {
                    // Z edge
-                   let cp = eulerTransform(i===0?r:w-r, j===0?r:h-r, cz_val + wz/2, rx, ry, rz);
-                   outputCylinder(`${namePrefix} (CylZ ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wz, r, rx + Math.PI/2, ry, rz);
+                   let cp = eulerTransform(i===0?r:w-r, j===0?r:h-r, mod_cz + mod_wz/2, rx, ry, rz);
+                   outputCylinder(`${namePrefix} (CylZ ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], mod_wz, r, rx + Math.PI/2, ry, rz);
                 }
              } else {
-                 let b_pt = eulerTransform(cx_val, cy_val, cz_val, rx, ry, rz);
-                 outputRhomboid(`${namePrefix} (BlockSharp ${i}${j}${k})`, ox+b_pt[0], oy+b_pt[1], oz+b_pt[2], wx, wy, wz, rx, ry, rz);
+                 let b_pt = eulerTransform(mod_cx, mod_cy, mod_cz, rx, ry, rz);
+                 outputRhomboid(`${namePrefix} (BlockSharp ${i}${j}${k})`, ox+b_pt[0], oy+b_pt[1], oz+b_pt[2], mod_wx, mod_wy, mod_wz, rx, ry, rz);
              }
           } else if (ones === 0) {
              // Corner
@@ -294,20 +312,24 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
              let eZ = isEdgeRounded(i, j, 1); if (eZ) c_edges++;
 
              if (c_edges === 0) {
-                 let b_pt = eulerTransform(cx_val, cy_val, cz_val, rx, ry, rz);
-                 outputRhomboid(`${namePrefix} (CornerSharp ${i}${j}${k})`, ox+b_pt[0], oy+b_pt[1], oz+b_pt[2], wx, wy, wz, rx, ry, rz);
+                 let b_pt = eulerTransform(mod_cx, mod_cy, mod_cz, rx, ry, rz);
+                 outputRhomboid(`${namePrefix} (CornerSharp ${i}${j}${k})`, ox+b_pt[0], oy+b_pt[1], oz+b_pt[2], mod_wx, mod_wy, mod_wz, rx, ry, rz);
              } else if (c_edges === 1) {
                  // Spans the corner using the single existing cylinder
                  if (eX) {
-                     let cp = eulerTransform(cx_val + wx/2, j===0?r:h-r, k===0?r:d-r, rx, ry, rz);
-                     outputCylinder(`${namePrefix} (CylXCor ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wx, r, rx, ry, rz - Math.PI/2);
+                     let cp = eulerTransform(mod_cx + mod_wx/2, j===0?r:h-r, k===0?r:d-r, rx, ry, rz);
+                     outputCylinder(`${namePrefix} (CylXCor ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], mod_wx, r, rx, ry, rz - Math.PI/2);
                  } else if (eY) {
-                     let cp = eulerTransform(i===0?r:w-r, cy_val + wy/2, k===0?r:d-r, rx, ry, rz);
-                     outputCylinder(`${namePrefix} (CylYCor ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wy, r, rx, ry, rz);
+                     let cp = eulerTransform(i===0?r:w-r, mod_cy + mod_wy/2, k===0?r:d-r, rx, ry, rz);
+                     outputCylinder(`${namePrefix} (CylYCor ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], mod_wy, r, rx, ry, rz);
                  } else if (eZ) {
-                     let cp = eulerTransform(i===0?r:w-r, j===0?r:h-r, cz_val + wz/2, rx, ry, rz);
-                     outputCylinder(`${namePrefix} (CylZCor ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wz, r, rx + Math.PI/2, ry, rz);
+                     let cp = eulerTransform(i===0?r:w-r, j===0?r:h-r, mod_cz + mod_wz/2, rx, ry, rz);
+                     outputCylinder(`${namePrefix} (CylZCor ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], mod_wz, r, rx + Math.PI/2, ry, rz);
                  }
+             } else if (c_edges >= 2) {
+                 // Corner where 2 or 3 rounded edges meet. Use a sphere to smooth the intersection fully
+                 let cp = eulerTransform(i===0?r:w-r, j===0?r:h-r, k===0?r:d-r, rx, ry, rz);
+                 outputSphere(`${namePrefix} (SphereCor ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], r);
              } else {
                  // Sphere if >= 2 edges are rounded
                  let cp = eulerTransform(i===0?r:w-r, j===0?r:h-r, k===0?r:d-r, rx, ry, rz);
