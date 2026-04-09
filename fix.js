@@ -1,32 +1,19 @@
-//Cely subor generovany pomocou AI (ChatGPT) na zaklade popisu funkcionality s drobnymi upravami odo mna
+const fs = require('fs');
 
-//typ objektu ktory ocakavam z DB
-type DbObj = {
-  type: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  rotation_y?: number | null;
-  params?: any;
-};
+const tsFile = 'src/lib/pythonBoundaries.ts';
+let content = fs.readFileSync(tsFile, 'utf8');
 
-//pomocna funkcia na formatovanie cisiel na 6 desatinnych miest, ak nieje cislo tak vrati 0
-function f(n: unknown) {
-  const x = typeof n === "number" && Number.isFinite(n) ? n : 0;
-  return Number(x.toFixed(6));
+const regex = /export function generatePythonBoundaries\([^\{]+{([\s\S]*)/;
+const match = regex.exec(content);
+
+if (!match) {
+    console.error('Function not found!');
+    process.exit(1);
 }
 
-/**
- * Generates python code snippet for BOUNDARIES section.
- * Supported:
- *  - cube/rhomboid -> shapes.Rhomboid(...)
- *  - cylinder      -> shapes.Cylinder(...)
- *
- * Assumption:
- *  - pos_* are used as "corner" for rhomboid (matches your current modeling approach)
- *  - cylinder uses center, axis fixed to z; if you later store axis/rotation, extend here.
- */
-export function generatePythonBoundaries(objects: DbObj[]) {
+const pre = content.substring(0, match.index);
+
+const funcStr = `export function generatePythonBoundaries(objects: DbObj[]) {
   const lines: string[] = []; 
 
   function eulerTransform(x: number, y: number, z: number, rx: number, ry: number, rz: number): [number, number, number] {
@@ -77,7 +64,10 @@ export function generatePythonBoundaries(objects: DbObj[]) {
       const w = f(p.width ?? p.w ?? 1) * sx;
       const h = f(p.height ?? p.h ?? 1) * sy;
       const d = f(p.depth ?? p.d ?? 1) * sz;
-      const rx = f(p.rotX ?? 0), ry = f(o.rotation_y ?? 0), rz = f(p.rotZ ?? 0);
+
+      const rx = f(p.rotX ?? 0);
+      const ry = f(o.rotation_y ?? 0);
+      const rz = f(p.rotZ ?? 0);
 
       for(let i=0; i<=1; i++) {
         for(let j=0; j<=1; j++) {
@@ -88,11 +78,16 @@ export function generatePythonBoundaries(objects: DbObj[]) {
         }
       }
     } else if (t === "cylinder") {
-      const sx = f(p.scaleX ?? 1.0), sy = f(p.scaleY ?? 1.0), sz = f(p.scaleZ ?? 1.0);
+      const sx = f(p.scaleX ?? 1.0);
+      const sy = f(p.scaleY ?? 1.0);
+      const sz = f(p.scaleZ ?? 1.0);
       const rScale = Math.max(sx, sz);
       const radius = f(p.radius ?? p.r ?? p.radiusTop ?? 1) * rScale;
       const length = f(p.height ?? p.length ?? 1) * sy;
-      const rx = f(p.rotX ?? 0), ry = f(o.rotation_y ?? 0), rz = f(p.rotZ ?? 0);
+
+      const rx = f(p.rotX ?? 0);
+      const ry = f(o.rotation_y ?? 0);
+      const rz = f(p.rotZ ?? 0);
 
       for(let i=-1; i<=1; i+=2) {
         for(let j=-1; j<=1; j+=2) {
@@ -107,11 +102,19 @@ export function generatePythonBoundaries(objects: DbObj[]) {
       parts.forEach((part: any) => {
         const pp = part.params || {};
         const pt = String(part.type || "").toLowerCase();
-        let pcx = px + f(part.pos_x), pcy = py + f(part.pos_y), pcz = pz + f(part.pos_z);
-        const local_rx = f(pp.rotX ?? 0), local_ry = f(part.rotation_y ?? 0), local_rz = f(pp.rotZ ?? 0);
+        
+        let pcx = px + f(part.pos_x);
+        let pcy = py + f(part.pos_y);
+        let pcz = pz + f(part.pos_z);
+        
+        const local_rx = f(pp.rotX ?? 0);
+        const local_ry = f(part.rotation_y ?? 0);
+        const local_rz = f(pp.rotZ ?? 0);
 
         if (pt === "cube" || pt === "rhomboid") {
-           const sx = f(pp.scaleX ?? 1.0), sy = f(pp.scaleY ?? 1.0), sz = f(pp.scaleZ ?? 1.0);
+           const sx = f(pp.scaleX ?? 1.0);
+           const sy = f(pp.scaleY ?? 1.0);
+           const sz = f(pp.scaleZ ?? 1.0);
            const w = f(pp.width ?? pp.w ?? 1) * sx;
            const h = f(pp.height ?? pp.h ?? 1) * sy;
            const d = f(pp.depth ?? pp.d ?? 1) * sz;
@@ -124,7 +127,9 @@ export function generatePythonBoundaries(objects: DbObj[]) {
              }
            }
         } else if (pt === "cylinder") {
-           const sx = f(pp.scaleX ?? 1.0), sy = f(pp.scaleY ?? 1.0), sz = f(pp.scaleZ ?? 1.0);
+           const sx = f(pp.scaleX ?? 1.0);
+           const sy = f(pp.scaleY ?? 1.0);
+           const sz = f(pp.scaleZ ?? 1.0);
            const rScale = Math.max(sx, sz);
            const radius = f(pp.radius ?? pp.r ?? pp.radiusTop ?? 1) * rScale;
            const length = f(pp.height ?? pp.length ?? 1) * sy;
@@ -141,7 +146,10 @@ export function generatePythonBoundaries(objects: DbObj[]) {
     }
   });
 
-  if (minX === 99999) { minX = 0; minY = 0; minZ = 0; maxX = 10; maxY = 10; maxZ = 10; }
+  if (minX === 99999) {
+    minX = 0; minY = 0; minZ = 0;
+    maxX = 10; maxY = 10; maxZ = 10;
+  }
 
   const padX = (maxX - minX) * 0.2 || 10;
   const padY = (maxY - minY) * 0.2 || 10;
@@ -170,28 +178,27 @@ export function generatePythonBoundaries(objects: DbObj[]) {
   lines.push("# --------------------");
   lines.push("# SYSTEM INITIALIZATION");
   lines.push("# --------------------");
-  lines.push("# Automaticky vypocitana velkost boxu na zaklade 3D modelov z webu");
-  lines.push(`boxX = ${boxX}`);
-  lines.push(`boxY = ${boxY}`);
-  lines.push(`boxZ = ${boxZ}`);
+  lines.push("# Automaticky vypocitana velkost boxu");
+  lines.push(\`boxX = \${boxX}\`);
+  lines.push(\`boxY = \${boxY}\`);
+  lines.push(\`boxZ = \${boxZ}\`);
   lines.push("system = espressomd.System(box_l=[boxX, boxY, boxZ])");
   lines.push("system.time_step = 0.1");
   lines.push("system.cell_system.skin = 0.2");
   lines.push("");
   lines.push("# --------------------");
-  lines.push("# LBM FLUID (tekutina)");
+  lines.push("# LBM FLUID");
   lines.push("# --------------------");
-  lines.push("agrid = 1.0     # Rozlisenie pre LBM fluid mriezku");
-  lines.push("kin_visc = 1.0  # Viskozita");
-  lines.push("dens = 1.0      # Hustota");
+  lines.push("agrid = 1.0");
+  lines.push("kin_visc = 1.0");
+  lines.push("dens = 1.0");
   lines.push("");
-  lines.push("# Definicia fluidu. Pouzivame CPU verziu (pre GPU treba espressomd.lb.LBFluidGPU)");
   lines.push("lbf = espressomd.lb.LBFluid(agrid=agrid, dens=dens, visc=kin_visc, tau=0.1)");
   lines.push("system.actors.add(lbf)");
   lines.push("system.thermostat.set_lb(LB_fluid=lbf, gamma=1.5)");
   lines.push("");
   lines.push("# --------------------");
-  lines.push("# BOUNDARIES (generated)");
+  lines.push("# BOUNDARIES");
   lines.push("# --------------------");
   lines.push("boundaries = []");
   lines.push("");
@@ -203,6 +210,7 @@ export function generatePythonBoundaries(objects: DbObj[]) {
     const t = String(o.type || "").toLowerCase();
     const p = o.params ?? {};
 
+    // Base coordinates
     const px = f(o.pos_x) + shiftX;
     const py = f(o.pos_y) + shiftY;
     const pz = f(o.pos_z) + shiftZ;
@@ -224,14 +232,14 @@ export function generatePythonBoundaries(objects: DbObj[]) {
       let ptB = eulerTransform(0, h, 0, rx, ry, rz);
       let ptC = eulerTransform(0, 0, d, rx, ry, rz);
 
-      lines.push(`# object ${idx}: Rhomboid`);
-      lines.push(`a_vec = [${f(ptA[0])}, ${f(ptA[1])}, ${f(ptA[2])}]`);
-      lines.push(`b_vec = [${f(ptB[0])}, ${f(ptB[1])}, ${f(ptB[2])}]`);
-      lines.push(`c_vec = [${f(ptC[0])}, ${f(ptC[1])}, ${f(ptC[2])}]`);
-      lines.push(`corner = [${f(px)}, ${f(py)}, ${f(pz)}]`);
-      lines.push(`tmp_shape = shapes.Rhomboid(corner=corner, a=a_vec, b=b_vec, c=c_vec, direction=1)`);
+      lines.push(\`# object \${idx}: Rhomboid\`);
+      lines.push(\`a_vec = [\${f(ptA[0])}, \${f(ptA[1])}, \${f(ptA[2])}]\`);
+      lines.push(\`b_vec = [\${f(ptB[0])}, \${f(ptB[1])}, \${f(ptB[2])}]\`);
+      lines.push(\`c_vec = [\${f(ptC[0])}, \${f(ptC[1])}, \${f(ptC[2])}]\`);
+      lines.push(\`corner = [\${px}, \${py}, \${pz}]\`);
+      lines.push(\`tmp_shape = shapes.Rhomboid(corner=corner, a=a_vec, b=b_vec, c=c_vec, direction=1)\`);
       lines.push("boundaries.append(tmp_shape)");
-      lines.push(`oif.output_vtk_rhomboid(rhom_shape=tmp_shape, out_file="output/sim2/boundary_obj_${idx}.vtk")`);
+      lines.push(\`oif.output_vtk_rhomboid(rhom_shape=tmp_shape, out_file="output/sim2/boundary_obj_\${idx}.vtk")\`);
       lines.push("");
       continue;
     }
@@ -242,19 +250,18 @@ export function generatePythonBoundaries(objects: DbObj[]) {
       const length = f(p.height ?? p.length ?? 1) * sy;
 
       let axis = eulerTransform(0, 1.0, 0, rx, ry, rz);
-
-      lines.push(`# object ${idx}: Cylinder`);
-      lines.push(`axis = [${f(axis[0])}, ${f(axis[1])}, ${f(axis[2])}]`);
-      lines.push(`tmp_shape = shapes.Cylinder(center=[${f(px)}, ${f(py)}, ${f(pz)}], axis=axis, length=${length}, radius=${radius}, direction=1)`);
+      lines.push(\`# object \${idx}: Cylinder\`);
+      lines.push(\`axis = [\${f(axis[0])}, \${f(axis[1])}, \${f(axis[2])}]\`);
+      lines.push(\`tmp_shape = shapes.Cylinder(center=[\${px}, \${py}, \${pz}], axis=axis, length=\${length}, radius=\${radius}, direction=1)\`);
       lines.push("boundaries.append(tmp_shape)");
-      lines.push(`oif.output_vtk_cylinder(cyl_shape=tmp_shape, n=20, out_file="output/sim2/boundary_obj_${idx}.vtk")`);
+      lines.push(\`oif.output_vtk_cylinder(cyl_shape=tmp_shape, n=20, out_file="output/sim2/boundary_obj_\${idx}.vtk")\`);
       lines.push("");
       continue;
     }
 
     if (t === "merged") {
       const parts = (p.parts || []) as any[];
-      lines.push(`# object ${idx}: Merged (${parts.length} parts)`);
+      lines.push(\`# object \${idx}: Merged (\${parts.length} parts)\`);
       
       for (let pi = 0; pi < parts.length; pi++) {
         const part = parts[pi];
@@ -278,14 +285,14 @@ export function generatePythonBoundaries(objects: DbObj[]) {
           let ptB = eulerTransform(0, h, 0, local_rx, local_ry, local_rz);
           let ptC = eulerTransform(0, 0, d, local_rx, local_ry, local_rz);
 
-          lines.push(`# merged part ${pi + 1}: Rhomboid`);
-          lines.push(`a_vec = [${f(ptA[0])}, ${f(ptA[1])}, ${f(ptA[2])}]`);
-          lines.push(`b_vec = [${f(ptB[0])}, ${f(ptB[1])}, ${f(ptB[2])}]`);
-          lines.push(`c_vec = [${f(ptC[0])}, ${f(ptC[1])}, ${f(ptC[2])}]`);
-          lines.push(`corner = [${f(pcx)}, ${f(pcy)}, ${f(pcz)}]`);
-          lines.push(`tmp_shape = shapes.Rhomboid(corner=corner, a=a_vec, b=b_vec, c=c_vec, direction=1)`);
+          lines.push(\`# merged part \${pi + 1}: Rhomboid\`);
+          lines.push(\`a_vec = [\${f(ptA[0])}, \${f(ptA[1])}, \${f(ptA[2])}]\`);
+          lines.push(\`b_vec = [\${f(ptB[0])}, \${f(ptB[1])}, \${f(ptB[2])}]\`);
+          lines.push(\`c_vec = [\${f(ptC[0])}, \${f(ptC[1])}, \${f(ptC[2])}]\`);
+          lines.push(\`corner = [\${pcx}, \${pcy}, \${pcz}]\`);
+          lines.push(\`tmp_shape = shapes.Rhomboid(corner=corner, a=a_vec, b=b_vec, c=c_vec, direction=1)\`);
           lines.push("boundaries.append(tmp_shape)");
-          lines.push(`oif.output_vtk_rhomboid(rhom_shape=tmp_shape, out_file="output/sim2/boundary_obj_${idx}_part_${pi + 1}.vtk")`);
+          lines.push(\`oif.output_vtk_rhomboid(rhom_shape=tmp_shape, out_file="output/sim2/boundary_obj_\${idx}_part_\${pi + 1}.vtk")\`);
           lines.push("");
         } else if (pt === "cylinder") {
           const sx = f(pp.scaleX ?? 1.0);
@@ -295,15 +302,15 @@ export function generatePythonBoundaries(objects: DbObj[]) {
           const length = f(pp.height ?? pp.length ?? 1) * sy;
           
           let axis = eulerTransform(0, 1.0, 0, local_rx, local_ry, local_rz);
-
-          lines.push(`# merged part ${pi + 1}: Cylinder`);
-          lines.push(`axis = [${f(axis[0])}, ${f(axis[1])}, ${f(axis[2])}]`);
-          lines.push(`tmp_shape = shapes.Cylinder(center=[${f(pcx)}, ${f(pcy)}, ${f(pcz)}], axis=axis, length=${length}, radius=${radius}, direction=1)`);
+          lines.push(\`# merged part \${pi + 1}: Cylinder\`);
+          lines.push(\`axis = [\${f(axis[0])}, \${f(axis[1])}, \${f(axis[2])}]\`);
+          lines.push(\`tmp_shape = shapes.Cylinder(center=[\${pcx}, \${pcy}, \${pcz}], axis=axis, length=\${length}, radius=\${radius}, direction=1)\`);
           lines.push("boundaries.append(tmp_shape)");
-          lines.push(`oif.output_vtk_cylinder(cyl_shape=tmp_shape, n=20, out_file="output/sim2/boundary_obj_${idx}_part_${pi + 1}.vtk")`);
+          lines.push(\`oif.output_vtk_cylinder(cyl_shape=tmp_shape, n=20, out_file="output/sim2/boundary_obj_\${idx}_part_\${pi + 1}.vtk")\`);
           lines.push("");
         }
       }
+      continue;
     }
   }
 
@@ -326,5 +333,9 @@ export function generatePythonBoundaries(objects: DbObj[]) {
   lines.push("print('Simulation setup and export completed successfully!')");
   lines.push("");
   lines.push("# end of generated boundaries");
-  return lines.join("\n"); 
-}
+  return lines.join("\\n"); 
+}`;
+
+const final = pre + funcStr + '\n';
+fs.writeFileSync(tsFile, final);
+console.log('Done!');

@@ -1,32 +1,14 @@
-//Cely subor generovany pomocou AI (ChatGPT) na zaklade popisu funkcionality s drobnymi upravami odo mna
+import re
 
-//typ objektu ktory ocakavam z DB
-type DbObj = {
-  type: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  rotation_y?: number | null;
-  params?: any;
-};
+ts_file = 'src/lib/pythonBoundaries.ts'
+with open(ts_file, 'r', encoding='utf-8') as f:
+    content = f.read()
 
-//pomocna funkcia na formatovanie cisiel na 6 desatinnych miest, ak nieje cislo tak vrati 0
-function f(n: unknown) {
-  const x = typeof n === "number" && Number.isFinite(n) ? n : 0;
-  return Number(x.toFixed(6));
-}
+func_start = "export function generatePythonBoundaries"
+idx = content.find(func_start)
+pre = content[:idx]
 
-/**
- * Generates python code snippet for BOUNDARIES section.
- * Supported:
- *  - cube/rhomboid -> shapes.Rhomboid(...)
- *  - cylinder      -> shapes.Cylinder(...)
- *
- * Assumption:
- *  - pos_* are used as "corner" for rhomboid (matches your current modeling approach)
- *  - cylinder uses center, axis fixed to z; if you later store axis/rotation, extend here.
- */
-export function generatePythonBoundaries(objects: DbObj[]) {
+func_str = """export function generatePythonBoundaries(objects: DbObj[]) {
   const lines: string[] = []; 
 
   function eulerTransform(x: number, y: number, z: number, rx: number, ry: number, rz: number): [number, number, number] {
@@ -326,5 +308,11 @@ export function generatePythonBoundaries(objects: DbObj[]) {
   lines.push("print('Simulation setup and export completed successfully!')");
   lines.push("");
   lines.push("# end of generated boundaries");
-  return lines.join("\n"); 
+  return lines.join("\\n"); 
 }
+"""
+
+with open(ts_file, 'w', encoding='utf-8') as f:
+    f.write(pre + func_str)
+
+print("Updated script.")
