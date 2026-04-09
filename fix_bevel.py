@@ -1,31 +1,14 @@
+import re
 
-//typ objektu ktory ocakavam z DB
-type DbObj = {
-  type: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  rotation_y?: number | null;
-  params?: any;
-};
+ts_file = 'src/lib/pythonBoundaries.ts'
+with open(ts_file, 'r', encoding='utf-8') as f:
+    content = f.read()
 
-//pomocna funkcia na formatovanie cisiel na 6 desatinnych miest, ak nieje cislo tak vrati 0
-function f(n: unknown) {
-  const x = typeof n === "number" && Number.isFinite(n) ? n : 0;
-  return Number(x.toFixed(6));
-}
+func_start = "export function generatePythonBoundaries"
+idx = content.find(func_start)
+pre = content[:idx]
 
-/**
- * Generates python code snippet for BOUNDARIES section.
- * Supported:
- *  - cube/rhomboid -> shapes.Rhomboid(...)
- *  - cylinder      -> shapes.Cylinder(...)
- *
- * Assumption:
- *  - pos_* are used as "corner" for rhomboid (matches your current modeling approach)
- *  - cylinder uses center, axis fixed to z; if you later store axis/rotation, extend here.
- */
-export function generatePythonBoundaries(objects: DbObj[]) {
+func_str = """export function generatePythonBoundaries(objects: DbObj[]) {
   const lines: string[] = []; 
 
   function eulerTransform(x: number, y: number, z: number, rx: number, ry: number, rz: number): [number, number, number] {
@@ -184,139 +167,117 @@ export function generatePythonBoundaries(objects: DbObj[]) {
     let ptA = eulerTransform(w, 0, 0, rx, ry, rz);
     let ptB = eulerTransform(0, h, 0, rx, ry, rz);
     let ptC = eulerTransform(0, 0, d, rx, ry, rz);
-    lines.push(`# ${name}`);
-    lines.push(`tmp_shape = shapes.Rhomboid(corner=[${f(ox)}, ${f(oy)}, ${f(oz)}], a=[${f(ptA[0])}, ${f(ptA[1])}, ${f(ptA[2])}], b=[${f(ptB[0])}, ${f(ptB[1])}, ${f(ptB[2])}], c=[${f(ptC[0])}, ${f(ptC[1])}, ${f(ptC[2])}], direction=1)`);
+    lines.push(\`# \${name}\`);
+    lines.push(\`tmp_shape = shapes.Rhomboid(corner=[\${f(ox)}, \${f(oy)}, \${f(oz)}], a=[\${f(ptA[0])}, \${f(ptA[1])}, \${f(ptA[2])}], b=[\${f(ptB[0])}, \${f(ptB[1])}, \${f(ptB[2])}], c=[\${f(ptC[0])}, \${f(ptC[1])}, \${f(ptC[2])}], direction=1)\`);
     lines.push("boundaries.append(tmp_shape)");
     oifIdx++;
-    lines.push(`oif.output_vtk_rhomboid(rhom_shape=tmp_shape, out_file="output/sim2/boundary_part_${oifIdx}.vtk")`);
+    lines.push(\`oif.output_vtk_rhomboid(rhom_shape=tmp_shape, out_file="output/sim2/boundary_part_\${oifIdx}.vtk")\`);
   }
 
   function outputCylinder(name: string, cx: number, cy: number, cz: number, length: number, radius: number, rx: number, ry: number, rz: number) {
     let axis = eulerTransform(0, 1.0, 0, rx, ry, rz);
-    lines.push(`# ${name}`);
-    lines.push(`tmp_shape = shapes.Cylinder(center=[${f(cx)}, ${f(cy)}, ${f(cz)}], axis=[${f(axis[0])}, ${f(axis[1])}, ${f(axis[2])}], length=${f(length)}, radius=${f(radius)}, direction=1)`);
+    lines.push(\`# \${name}\`);
+    lines.push(\`tmp_shape = shapes.Cylinder(center=[\${f(cx)}, \${f(cy)}, \${f(cz)}], axis=[\${f(axis[0])}, \${f(axis[1])}, \${f(axis[2])}], length=\${f(length)}, radius=\${f(radius)}, direction=1)\`);
     lines.push("boundaries.append(tmp_shape)");
     oifIdx++;
-    lines.push(`oif.output_vtk_cylinder(cyl_shape=tmp_shape, n=20, out_file="output/sim2/boundary_part_${oifIdx}.vtk")`);
+    lines.push(\`oif.output_vtk_cylinder(cyl_shape=tmp_shape, n=20, out_file="output/sim2/boundary_part_\${oifIdx}.vtk")\`);
   }
   
   function outputSphere(name: string, cx: number, cy: number, cz: number, radius: number) {
-    lines.push(`# ${name}`);
-    lines.push(`tmp_shape = shapes.Sphere(center=[${f(cx)}, ${f(cy)}, ${f(cz)}], radius=${f(radius)}, direction=1)`);
+    lines.push(\`# \${name}\`);
+    lines.push(\`tmp_shape = shapes.Sphere(center=[\${f(cx)}, \${f(cy)}, \${f(cz)}], radius=\${f(radius)}, direction=1)\`);
     lines.push("boundaries.append(tmp_shape)");
     oifIdx++;
     // OIF nemusi mat priamo output_vtk_sphere v tomto kontexte, nahradime valcom s l=0.01 pre vtk zobrazenie alebo preskocime vtk
     // V ESPResSo sa proste pouzije
   }
 
-  function edgeGroupToSet(group: string | undefined): Set<string> {
-  switch (group) {
-    case "Všetky": return new Set(["vert-fl","vert-fr","vert-bl","vert-br","top-front","top-back","top-left","top-right","bot-front","bot-back","bot-left","bot-right"]);
-    case "Zvislé rohy": return new Set(["vert-fl","vert-fr","vert-bl","vert-br"]);
-    case "Horné hrany": return new Set(["top-front","top-back","top-left","top-right"]);
-    case "Dolné hrany": return new Set(["bot-front","bot-back","bot-left","bot-right"]);
-    case "Bočné hrany": return new Set(["top-left","top-right","bot-left","bot-right"]);
-    default: return new Set();
-  }
-}
+  function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: number, h: number, d: number, rx: number, ry: number, rz: number, bevel: number) {
+     if (bevel <= 0) {
+        outputRhomboid(namePrefix + " (Solid Cube)", ox, oy, oz, w, h, d, rx, ry, rz);
+        return;
+     }
+     
+     // 1. Central Core Box
+     let c_ox = ox, c_oy = oy, c_oz = oz;
+     let c_pt = eulerTransform(bevel, bevel, bevel, rx, ry, rz);
+     outputRhomboid(namePrefix + " (Core)", ox + c_pt[0], oy + c_pt[1], oz + c_pt[2], w - 2*bevel, h - 2*bevel, d - 2*bevel, rx, ry, rz);
+     
+     // 2. 6 Face extensions (top, bottom, left, right, front, back)
+     // Top / Bottom
+     let t_pt = eulerTransform(bevel, h - bevel, bevel, rx, ry, rz);
+     outputRhomboid(namePrefix + " (Top)", ox + t_pt[0], oy + t_pt[1], oz + t_pt[2], w - 2*bevel, bevel, d - 2*bevel, rx, ry, rz);
+     let b_pt = eulerTransform(bevel, 0, bevel, rx, ry, rz);
+     outputRhomboid(namePrefix + " (Bottom)", ox + b_pt[0], oy + b_pt[1], oz + b_pt[2], w - 2*bevel, bevel, d - 2*bevel, rx, ry, rz);
 
-function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: number, h: number, d: number, rx: number, ry: number, rz: number, bevel: number, edgesRaw: string[] | undefined, groupRaw: string | undefined) {
-    let edges = edgesRaw ? new Set(edgesRaw) : edgeGroupToSet(groupRaw || "Všetky");
-    let r = Math.min(bevel, w / 2.0, h / 2.0, d / 2.0);
-    if (r <= 0 || edges.size === 0) {
-      outputRhomboid(namePrefix + " (Solid Cube)", ox, oy, oz, w, h, d, rx, ry, rz);
-      return;
-    }
-    
-    const R = (id: string) => edges.has(id);
-    function isEdgeRounded(i: number, j: number, k: number) {
-      if (i===0 && j===1 && k===0) return R("vert-bl");
-      if (i===2 && j===1 && k===0) return R("vert-br");
-      if (i===2 && j===1 && k===2) return R("vert-fr");
-      if (i===0 && j===1 && k===2) return R("vert-fl");
+     // Left / Right
+     let l_pt = eulerTransform(0, bevel, bevel, rx, ry, rz);
+     outputRhomboid(namePrefix + " (Left)", ox + l_pt[0], oy + l_pt[1], oz + l_pt[2], bevel, h - 2*bevel, d - 2*bevel, rx, ry, rz);
+     let r_pt = eulerTransform(w - bevel, bevel, bevel, rx, ry, rz);
+     outputRhomboid(namePrefix + " (Right)", ox + r_pt[0], oy + r_pt[1], oz + r_pt[2], bevel, h - 2*bevel, d - 2*bevel, rx, ry, rz);
 
-      if (i===0 && j===2 && k===1) return R("top-left");
-      if (i===2 && j===2 && k===1) return R("top-right");
-      if (i===0 && j===0 && k===1) return R("bot-left");
-      if (i===2 && j===0 && k===1) return R("bot-right");
+     // Front / Back
+     let f_pt = eulerTransform(bevel, bevel, d - bevel, rx, ry, rz);
+     outputRhomboid(namePrefix + " (Front)", ox + f_pt[0], oy + f_pt[1], oz + f_pt[2], w - 2*bevel, h - 2*bevel, bevel, rx, ry, rz);
+     let bk_pt = eulerTransform(bevel, bevel, 0, rx, ry, rz);
+     outputRhomboid(namePrefix + " (Back)", ox + bk_pt[0], oy + bk_pt[1], oz + bk_pt[2], w - 2*bevel, h - 2*bevel, bevel, rx, ry, rz);
 
-      if (i===1 && j===0 && k===0) return R("bot-back");
-      if (i===1 && j===0 && k===2) return R("bot-front");
-      if (i===1 && j===2 && k===0) return R("top-back");
-      if (i===1 && j===2 && k===2) return R("top-front");
-      return false;
-    }
+     // 3. 12 Edges as cylinders
+     // Vertical edges (height is along Y originally)
+     let ve1_pt = eulerTransform(bevel, h/2, bevel, rx, ry, rz);
+     outputCylinder(namePrefix + " (Edge VL)", ox + ve1_pt[0], oy + ve1_pt[1], oz + ve1_pt[2], h - 2*bevel, bevel, rx, ry, rz);
+     let ve2_pt = eulerTransform(w - bevel, h/2, bevel, rx, ry, rz);
+     outputCylinder(namePrefix + " (Edge VR)", ox + ve2_pt[0], oy + ve2_pt[1], oz + ve2_pt[2], h - 2*bevel, bevel, rx, ry, rz);
+     let ve3_pt = eulerTransform(bevel, h/2, d - bevel, rx, ry, rz);
+     outputCylinder(namePrefix + " (Edge VLF)", ox + ve3_pt[0], oy + ve3_pt[1], oz + ve3_pt[2], h - 2*bevel, bevel, rx, ry, rz);
+     let ve4_pt = eulerTransform(w - bevel, h/2, d - bevel, rx, ry, rz);
+     outputCylinder(namePrefix + " (Edge VRF)", ox + ve4_pt[0], oy + ve4_pt[1], oz + ve4_pt[2], h - 2*bevel, bevel, rx, ry, rz);
 
-    const xs = [0, r, w-r, w];
-    const ys = [0, r, h-r, h];
-    const zs = [0, r, d-r, d];
+     // Horizontal edges (along X originally -> meaning their axis must be X. To do this with ESPResSo cylinder, we'd need to supply an axis vector. Our outputCylinder rotates [0,1,0]. We need to rotate by -PI/2 on Z to make it point along X before applying rx,ry,rz. Same for Z)
+     
+     function outputCylEdge(name: string, cx: number, cy: number, cz: number, length: number, radius: number, rotEdgeX: number, rotEdgeY: number, rotEdgeZ: number) {
+        let axis = eulerTransform(0, 1.0, 0, rotEdgeX, rotEdgeY, rotEdgeZ);
+        // Then apply global rotation rx, ry, rz
+        let finalAxis = eulerTransform(axis[0], axis[1], axis[2], rx, ry, rz);
+        lines.push(\`# \${name}\`);
+        lines.push(\`tmp_shape = shapes.Cylinder(center=[\${f(ox + cx)}, \${f(oy + cy)}, \${f(oz + cz)}], axis=[\${f(finalAxis[0])}, \${f(finalAxis[1])}, \${f(finalAxis[2])}], length=\${f(length)}, radius=\${f(radius)}, direction=1)\`);
+        lines.push("boundaries.append(tmp_shape)");
+        oifIdx++;
+        lines.push(\`oif.output_vtk_cylinder(cyl_shape=tmp_shape, n=20, out_file="output/sim2/boundary_part_\${oifIdx}.vtk")\`);
+     }
 
-    for(let i=0; i<3; i++) {
-      for(let j=0; j<3; j++) {
-        for(let k=0; k<3; k++) {
-          let cx_val = xs[i]; let wx = xs[i+1] - xs[i];
-          let cy_val = ys[j]; let wy = ys[j+1] - ys[j];
-          let cz_val = zs[k]; let wz = zs[k+1] - zs[k];
-          
-          if (wx <= 0.0001 && wy <= 0.0001 && wz <= 0.0001) continue;
+     // Top/Bottom X edges
+     let he1_cx = eulerTransform(w/2, bevel, bevel, rx, ry, rz);
+     outputCylEdge(namePrefix + " (Edge BotX1)", he1_cx[0], he1_cx[1], he1_cx[2], w - 2*bevel, bevel, 0, 0, -Math.PI/2);
+     let he2_cx = eulerTransform(w/2, h - bevel, bevel, rx, ry, rz);
+     outputCylEdge(namePrefix + " (Edge TopX1)", he2_cx[0], he2_cx[1], he2_cx[2], w - 2*bevel, bevel, 0, 0, -Math.PI/2);
+     let he3_cx = eulerTransform(w/2, bevel, d - bevel, rx, ry, rz);
+     outputCylEdge(namePrefix + " (Edge BotX2)", he3_cx[0], he3_cx[1], he3_cx[2], w - 2*bevel, bevel, 0, 0, -Math.PI/2);
+     let he4_cx = eulerTransform(w/2, h - bevel, d - bevel, rx, ry, rz);
+     outputCylEdge(namePrefix + " (Edge TopX2)", he4_cx[0], he4_cx[1], he4_cx[2], w - 2*bevel, bevel, 0, 0, -Math.PI/2);
 
-          let ones = (i===1?1:0) + (j===1?1:0) + (k===1?1:0);
+     // Top/Bottom Z edges
+     let ze1_cx = eulerTransform(bevel, bevel, d/2, rx, ry, rz);
+     outputCylEdge(namePrefix + " (Edge BotZ1)", ze1_cx[0], ze1_cx[1], ze1_cx[2], d - 2*bevel, bevel, Math.PI/2, 0, 0);
+     let ze2_cx = eulerTransform(w - bevel, bevel, d/2, rx, ry, rz);
+     outputCylEdge(namePrefix + " (Edge BotZ2)", ze2_cx[0], ze2_cx[1], ze2_cx[2], d - 2*bevel, bevel, Math.PI/2, 0, 0);
+     let ze3_cx = eulerTransform(bevel, h - bevel, d/2, rx, ry, rz);
+     outputCylEdge(namePrefix + " (Edge TopZ1)", ze3_cx[0], ze3_cx[1], ze3_cx[2], d - 2*bevel, bevel, Math.PI/2, 0, 0);
+     let ze4_cx = eulerTransform(w - bevel, h - bevel, d/2, rx, ry, rz);
+     outputCylEdge(namePrefix + " (Edge TopZ2)", ze4_cx[0], ze4_cx[1], ze4_cx[2], d - 2*bevel, bevel, Math.PI/2, 0, 0);
 
-          if (ones >= 2) {
-             // Core or face - solid block
-             let b_pt = eulerTransform(cx_val, cy_val, cz_val, rx, ry, rz);
-             outputRhomboid(`${namePrefix} (Block ${i}${j}${k})`, ox+b_pt[0], oy+b_pt[1], oz+b_pt[2], wx, wy, wz, rx, ry, rz);
-          } else if (ones === 1) {
-             // Edge
-             if (isEdgeRounded(i, j, k)) {
-                if (i===1) {
-                   // X edge
-                   let cp = eulerTransform(cx_val + wx/2, j===0?r:h-r, k===0?r:d-r, rx, ry, rz);
-                   outputCylinder(`${namePrefix} (CylX ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wx, r, rx, ry, rz - Math.PI/2);
-                } else if (j===1) {
-                   // Y edge
-                   let cp = eulerTransform(i===0?r:w-r, cy_val + wy/2, k===0?r:d-r, rx, ry, rz);
-                   outputCylinder(`${namePrefix} (CylY ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wy, r, rx, ry, rz);
-                } else if (k===1) {
-                   // Z edge
-                   let cp = eulerTransform(i===0?r:w-r, j===0?r:h-r, cz_val + wz/2, rx, ry, rz);
-                   outputCylinder(`${namePrefix} (CylZ ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wz, r, rx + Math.PI/2, ry, rz);
-                }
-             } else {
-                 let b_pt = eulerTransform(cx_val, cy_val, cz_val, rx, ry, rz);
-                 outputRhomboid(`${namePrefix} (BlockSharp ${i}${j}${k})`, ox+b_pt[0], oy+b_pt[1], oz+b_pt[2], wx, wy, wz, rx, ry, rz);
-             }
-          } else if (ones === 0) {
-             // Corner
-             let c_edges = 0;
-             let eX = isEdgeRounded(1, j, k); if (eX) c_edges++;
-             let eY = isEdgeRounded(i, 1, k); if (eY) c_edges++;
-             let eZ = isEdgeRounded(i, j, 1); if (eZ) c_edges++;
-
-             if (c_edges === 0) {
-                 let b_pt = eulerTransform(cx_val, cy_val, cz_val, rx, ry, rz);
-                 outputRhomboid(`${namePrefix} (CornerSharp ${i}${j}${k})`, ox+b_pt[0], oy+b_pt[1], oz+b_pt[2], wx, wy, wz, rx, ry, rz);
-             } else if (c_edges === 1) {
-                 // Spans the corner using the single existing cylinder
-                 if (eX) {
-                     let cp = eulerTransform(cx_val + wx/2, j===0?r:h-r, k===0?r:d-r, rx, ry, rz);
-                     outputCylinder(`${namePrefix} (CylXCor ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wx, r, rx, ry, rz - Math.PI/2);
-                 } else if (eY) {
-                     let cp = eulerTransform(i===0?r:w-r, cy_val + wy/2, k===0?r:d-r, rx, ry, rz);
-                     outputCylinder(`${namePrefix} (CylYCor ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wy, r, rx, ry, rz);
-                 } else if (eZ) {
-                     let cp = eulerTransform(i===0?r:w-r, j===0?r:h-r, cz_val + wz/2, rx, ry, rz);
-                     outputCylinder(`${namePrefix} (CylZCor ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], wz, r, rx + Math.PI/2, ry, rz);
-                 }
-             } else {
-                 // Sphere if >= 2 edges are rounded
-                 let cp = eulerTransform(i===0?r:w-r, j===0?r:h-r, k===0?r:d-r, rx, ry, rz);
-                 outputSphere(`${namePrefix} (Sphere ${i}${j}${k})`, ox+cp[0], oy+cp[1], oz+cp[2], r);
-             }
-          }
-        }
-      }
-    }
+     // 4. 8 Corners as spheres
+     const xs = [bevel, w - bevel];
+     const ys = [bevel, h - bevel];
+     const zs = [bevel, d - bevel];
+     for (let x of xs) {
+       for (let y of ys) {
+         for (let z of zs) {
+           let sp_pt = eulerTransform(x, y, z, rx, ry, rz);
+           outputSphere(namePrefix + " (Corner)", ox + sp_pt[0], oy + sp_pt[1], oz + sp_pt[2], bevel);
+         }
+       }
+     }
   }
 
   for (const o of objects) {
@@ -342,7 +303,7 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
       const d = f(p.depth ?? p.d ?? 1) * sz;
       const bevel = f(p.bevelRadius ?? 0);
 
-      handleCube(`Object ${idx}`, px, py, pz, w, h, d, rx, ry, rz, bevel, p.bevelEdges, p.bevelGroup);
+      handleCube(\`Object \${idx}\`, px, py, pz, w, h, d, rx, ry, rz, bevel);
       continue;
     }
 
@@ -353,7 +314,7 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
 
       // cylinder uses center by default in setup
       // wait, earlier I used corner translations. ThreeJS cylinder is centered.
-      outputCylinder(`Object ${idx} Cylinder`, px, py, pz, length, radius, rx, ry, rz);
+      outputCylinder(\`Object \${idx} Cylinder\`, px, py, pz, length, radius, rx, ry, rz);
       continue;
     }
 
@@ -379,7 +340,7 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
           const d = f(pp.depth ?? pp.d ?? 1) * f(pp.scaleZ ?? 1.0);
           const bevel = f(pp.bevelRadius ?? 0);
           
-          handleCube(`Merged ${idx} Part ${pi+1}`, pcx, pcy, pcz, w, h, d, local_rx, local_ry, local_rz, bevel, pp.bevelEdges, pp.bevelGroup);
+          handleCube(\`Merged \${idx} Part \${pi+1}\`, pcx, pcy, pcz, w, h, d, local_rx, local_ry, local_rz, bevel);
         } else if (pt === "cylinder") {
           const sx = f(pp.scaleX ?? 1.0);
           const sz = f(pp.scaleZ ?? 1.0);
@@ -387,7 +348,7 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
           const radius = f(pp.radiusTop ?? pp.radius ?? pp.r ?? 0.5) * Math.max(sx, sz);
           const length = f(pp.height ?? pp.length ?? 1) * sy;
           
-          outputCylinder(`Merged ${idx} Part ${pi+1}`, pcx, pcy, pcz, length, radius, local_rx, local_ry, local_rz);
+          outputCylinder(\`Merged \${idx} Part \${pi+1}\`, pcx, pcy, pcz, length, radius, local_rx, local_ry, local_rz);
         }
       }
     }
@@ -400,5 +361,11 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
   lines.push("vtk_file = 'boundaries_grid_output.vtk'");
   lines.push("lbf.print_vtk_boundary(vtk_file)");
   lines.push("");
-  return lines.join("\n"); 
+  return lines.join("\\n"); 
 }
+"""
+
+with open(ts_file, 'w', encoding='utf-8') as f:
+    f.write(pre + func_str)
+
+print("Updated script.")
