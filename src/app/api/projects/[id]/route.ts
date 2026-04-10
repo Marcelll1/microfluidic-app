@@ -11,27 +11,69 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // kontrola prístupu k projektu (owner alebo admin)
-async function canAccessProject(projectId: string) {
+async function canAccessProject(projectId: string, isUpdate: boolean = false) {
   const auth = await requireUser();
   if (!auth.ok) return auth;
 
   // načítanie projektu
   const { data: project, error } = await supabase
     .from("projects")
-    .select("id, owner_id, name, description, created_at")
+    .select("id, owner_id, name, description, created_at, thumbnail, visibility")
     .eq("id", projectId)
     .maybeSingle();
 
   if (error) return { ok: false as const, status: 500 as const, error: error.message }; // chyba DB
   if (!project) return { ok: false as const, status: 404 as const, error: "Project not found" }; // neexistujúci projekt
 
-  // kontrola vlastníctva alebo admin
-  if (auth.user.role !== "admin" && project.owner_id !== auth.user.id) {
-    return { ok: false as const, status: 403 as const, error: "Forbidden" }; // nedostatočné práva
+  const is_owner = auth.user.role === "admin" || project.owner_id === auth.user.id;
+
+  // fetch collaborator status
+  const { data: colab } = await supabase
+    .from("project_collaborators")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("user_id", auth.user.id)
+    .maybeSingle();
+
+  const is_collaborator = !!colab;
+  const can_edit = is_owner || is_collaborator;
+
+  // iba owner moze updatovat nazov, popis, visibility (PATCH) alebo mazat (DELETE)
+  if (isUpdate && !is_owner) {
+    return { ok: false as const, status: 403 as const, error: "Only project owner can manage project details" };
+  }
+
+  const visibility = project.visibility || "private";
+
+  if (!can_edit) {
+    if (visibility === "private") {
+      return { ok: false as const, status: 403 as const, error: "Forbidden" }; // private project
+    }
+    if (visibility === "friends") {
+      const { data: b1 } = await supabase
+        .from("friends")
+        .select("id")
+        .eq("status", "accepted")
+        .eq("user_id1", project.owner_id)
+        .eq("user_id2", auth.user.id)
+        .maybeSingle();
+
+      const { data: b2 } = await supabase
+        .from("friends")
+        .select("id")
+        .eq("status", "accepted")
+        .eq("user_id1", auth.user.id)
+        .eq("user_id2", project.owner_id)
+        .maybeSingle();
+
+      if (!b1 && !b2) {
+        return { ok: false as const, status: 403 as const, error: "Must be a friend to view this project" };
+      }
+    }
   }
 
   // úspech
-  return { ok: true as const, user: auth.user, project };
+  return { ok: true as const, user: auth.user, project, is_owner, is_collaborator, can_edit };
 }
 
 // READ
@@ -40,19 +82,24 @@ export async function GET(_req: Request, ctx: Ctx) {
   const { id } = await ctx.params; // FIX: await params
   if (!UUID_RE.test(id)) return NextResponse.json({ error: "Invalid project id" }, { status: 400 });// overenie formátu UUID ak nieje validný id vráti chybu 400
 
-  const access = await canAccessProject(id);// kontrola prístupu
+  const access = await canAccessProject(id, false);// kontrola prístupu
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });// chyba prístupu
 
-  return NextResponse.json(access.project, { status: 200 });// vrátenie detailu projektu
+  return NextResponse.json({
+    ...access.project,
+    is_owner: access.is_owner,
+    is_collaborator: access.is_collaborator,
+    can_edit: access.can_edit,
+  }, { status: 200 });// vrátenie detailu projektu
 }
 
 // UPDATE
-// upraví name/description projektu
+// upraví name/description/visibility projektu
 export async function PATCH(req: Request, ctx: Ctx) { //zoberie id + UUID check
   const { id } = await ctx.params; // FIX: await params
   if (!UUID_RE.test(id)) return NextResponse.json({ error: "Invalid project id" }, { status: 400 }); // overenie formátu UUID
 
-  const access = await canAccessProject(id); // kontrola prístupu
+  const access = await canAccessProject(id, true); // kontrola prístupu (true pre update)
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });// chyba prístupu
 
   // načítanie a validácia vstupu
@@ -65,6 +112,8 @@ export async function PATCH(req: Request, ctx: Ctx) { //zoberie id + UUID check
   const name = typeof (body as any).name === "string" ? (body as any).name.trim() : undefined;
   const description =
     typeof (body as any).description === "string" ? (body as any).description.trim() : undefined;
+  const thumbnail = typeof (body as any).thumbnail === "string" ? (body as any).thumbnail : undefined;
+  const visibility = typeof (body as any).visibility === "string" ? (body as any).visibility : undefined;
 
   const patch: any = {}; // objekt pre aktualizáciu
 
@@ -81,6 +130,16 @@ export async function PATCH(req: Request, ctx: Ctx) { //zoberie id + UUID check
       return NextResponse.json({ error: "Description max 500 chars." }, { status: 400 });
     patch.description = description || null;
   }
+  // thumbnail patch
+  if (thumbnail !== undefined) {
+    patch.thumbnail = thumbnail || null;
+  }
+  if (visibility !== undefined) {
+    if (!["private", "friends", "public"].includes(visibility)) {
+      return NextResponse.json({ error: "Invalid visibility." }, { status: 400 });
+    }
+    patch.visibility = visibility;
+  }
   // žiadne polia na aktualizáciu
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
@@ -90,7 +149,7 @@ export async function PATCH(req: Request, ctx: Ctx) { //zoberie id + UUID check
     .from("projects")
     .update(patch)
     .eq("id", id)
-    .select("id, name, description, created_at, owner_id")
+    .select("id, name, description, created_at, owner_id, thumbnail")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

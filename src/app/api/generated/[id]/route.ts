@@ -33,3 +33,35 @@ export async function GET(
     },
   });
 }
+
+export async function DELETE(
+  _: Request,
+  { params }: { params: { id: string } | Promise<{ id: string }> }
+) {
+  const auth = await requireUser();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const { id } = await params;
+
+  const { data, error } = await supabase
+    .from("generated_artifacts")
+    .select("id,created_by")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (auth.user.role !== "admin" && data.created_by !== auth.user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { error: delError } = await supabase
+    .from("generated_artifacts")
+    .delete()
+    .eq("id", id);
+
+  if (delError) return NextResponse.json({ error: delError.message }, { status: 500 });
+  return NextResponse.json({ ok: true, deleted: id });
+}
+

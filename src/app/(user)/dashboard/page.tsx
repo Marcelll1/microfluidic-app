@@ -2,6 +2,15 @@
 
 import { useEffect, useState } from "react";
 
+//Typ projektu
+type Project = {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  thumbnail?: string | null;
+};
+
 //Typ artifactu z GET /api/generated
 type Artifact = {
   id: string;
@@ -14,8 +23,13 @@ type Artifact = {
 };
 
 export default function DashboardPage() {
-  const [items, setItems] = useState<Artifact[]>([]); //nacitane artifacty(generated files)
-  const [loading, setLoading] = useState(true); //ci sa nacitavaju data
+  const [lastProject, setLastProject] = useState<Project | null>(null);
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Multi-select status pre artefakty
+  const [selectedArtifacts, setSelectedArtifacts] = useState<Set<string>>(new Set());
+  const [actionLoading, setActionLoading] = useState(false);
 
   // change password
   const [oldPass, setOldPass] = useState(""); //stare heslo
@@ -23,22 +37,46 @@ export default function DashboardPage() {
   const [newPass2, setNewPass2] = useState("");//nove heslo potvrdenie
   const [saving, setSaving] = useState(false);//ci sa heslo aktualizuje
 
-  async function loadArtifacts() {
+  async function loadDashboardData() {
     setLoading(true);
-    const res = await fetch("/api/generated"); //ziska vsetky artifacty
-    const json = await res.json().catch(() => null); //parsuje JSON
+    setSelectedArtifacts(new Set()); // zmazat vyber pri nahrati db
 
-    //ak nie je OK, hodi chybu
-    if (!res.ok) {
-      console.error("Failed to load artifacts:", json);
-      setItems([]);
+    try {
+      // 1. Ziskaj projekty
+      const pRes = await fetch("/api/projects");
+      const pJson = await pRes.json().catch(() => null);
+
+      if (!pRes.ok) {
+        throw new Error(pJson?.error ?? "Failed to load projects");
+      }
+
+      const projects = Array.isArray(pJson) ? pJson : [];
+      if (projects.length === 0) {
+        setLastProject(null);
+        setArtifacts([]);
+        return;
+      }
+
+      // 2. Najnovsi projekt je prvy (API by ho malo vracat podla created_at desc)
+      const latest = projects[0];
+      setLastProject(latest);
+
+      // 3. Ziskaj artefakty a vyfiltruj iba tie pre najnovsi projekt
+      const aRes = await fetch("/api/generated");
+      const aJson = await aRes.json().catch(() => null);
+
+      if (aRes.ok && Array.isArray(aJson)) {
+        setArtifacts(aJson.filter((x: Artifact) => x.project_id === latest.id));
+      } else {
+        setArtifacts([]);
+      }
+    } catch (e: any) {
+      console.error(e);
+      setLastProject(null);
+      setArtifacts([]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    //overi ci je to pole k ano ulozi ho ako Artifact[] inak prazdny list
-    setItems(Array.isArray(json) ? json : []);
-    setLoading(false);
   }
 
   //handler pre zmenu hesla
@@ -74,10 +112,56 @@ export default function DashboardPage() {
     alert("Password changed.");
   }
 
-  //nacita artifacty pri prvom renderi
   useEffect(() => {
-    void loadArtifacts();
+    void loadDashboardData();
   }, []);
+
+  const toggleSelection = (artifactId: string) => {
+    setSelectedArtifacts((prev) => {
+      const next = new Set(prev);
+      if (next.has(artifactId)) next.delete(artifactId);
+      else next.add(artifactId);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedArtifacts.size === artifacts.length && artifacts.length > 0) {
+      setSelectedArtifacts(new Set());
+    } else {
+      setSelectedArtifacts(new Set(artifacts.map((a) => a.id)));
+    }
+  };
+
+  const handleDownloadSelected = () => {
+    artifacts
+      .filter((a) => selectedArtifacts.has(a.id))
+      .forEach((a) => {
+        const link = document.createElement("a");
+        link.href = `/api/generated/${a.id}`;
+        link.download = String(a.filename);
+        link.target = "_blank";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!confirm("Are you sure you want to delete the selected files?")) return;
+    setActionLoading(true);
+    try {
+      const selectedIds = Array.from(selectedArtifacts);
+      for (const artifactId of selectedIds) {
+        await fetch(`/api/generated/${artifactId}`, { method: "DELETE" });
+      }
+      await loadDashboardData();
+    } catch (e: any) {
+      alert("Failed to delete some files");
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   return (
     <main className="page p-6 max-w-5xl mx-auto">
@@ -123,38 +207,122 @@ export default function DashboardPage() {
       </section>
 
       <section className="card p-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-          <h2 className="text-lg font-medium">Generated files (download)</h2>
-          <button className="button-secondary" onClick={() => loadArtifacts()} disabled={loading}>
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
+          <h2 className="text-lg font-medium">Last Project</h2>
+          <button className="button-secondary" onClick={() => loadDashboardData()} disabled={loading}>
             Refresh
           </button>
         </div>
 
         {loading && <p className="text-slate-400">Loading…</p>}
-        {!loading && items.length === 0 && <p className="text-slate-400">No generated files.</p>}
+        {!loading && !lastProject && <p className="text-slate-400">No projects found.</p>}
 
-        {!loading && items.length > 0 && (
-          <ul className="space-y-3">
-            {items.map((it) => (
-              <li key={it.id} className="bg-slate-900 rounded px-4 py-3">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div>
-                    <div className="font-medium">{it.filename}</div>
-                    <div className="text-xs text-slate-500 mt-1">
-                      {it.kind} • {new Date(it.created_at).toLocaleString()}
-                      {it.project_name ? ` • ${it.project_name}` : ""}
-                    </div>
+        {!loading && lastProject && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="col-span-1">
+              <div className="bg-slate-900 rounded-lg p-4 border border-slate-800">
+                {lastProject.thumbnail ? (
+                  <img
+                    src={lastProject.thumbnail}
+                    alt={lastProject.name}
+                    className="w-full h-auto aspect-video object-cover rounded mb-4 bg-slate-800"
+                  />
+                ) : (
+                  <div className="w-full aspect-video rounded mb-4 bg-slate-800 flex items-center justify-center text-slate-500">
+                    No Thumbnail
                   </div>
-
-                  <a className="button-secondary" href={`/api/generated/${it.id}`}>
-                    Download
+                )}
+                <h3 className="font-medium text-lg mb-1">{lastProject.name}</h3>
+                <p className="text-sm text-slate-400 mb-3 block">
+                  {lastProject.description || <span className="text-slate-500">—</span>}
+                </p>
+                <div className="text-xs text-slate-500 mb-5">
+                  Created: {new Date(lastProject.created_at).toLocaleString()}
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <a className="button-primary text-sm px-3 py-1.5" href={`/editor?project=${lastProject.id}`}>
+                    Open Editor
+                  </a>
+                  <a className="button-secondary text-sm px-3 py-1.5" href={`/projects/${lastProject.id}/details`}>
+                    Details
                   </a>
                 </div>
-              </li>
-            ))}
-          </ul>
+              </div>
+            </div>
+
+            <div className="col-span-1 md:col-span-2">
+              <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+                <h3 className="font-medium text-slate-200">Generated files</h3>
+                {artifacts.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-slate-200">
+                      <input
+                        type="checkbox"
+                        className="rounded bg-slate-800 border-slate-700 text-blue-500 focus:ring-blue-500 cursor-pointer"
+                        checked={selectedArtifacts.size === artifacts.length && artifacts.length > 0}
+                        onChange={toggleAll}
+                      />
+                      Select All
+                    </label>
+                    <button
+                      className="button-secondary text-sm px-3 py-1.5"
+                      onClick={handleDownloadSelected}
+                      disabled={selectedArtifacts.size === 0 || actionLoading}
+                    >
+                      Download Selected
+                    </button>
+                    <button
+                      className="bg-red-500/10 text-red-400 hover:bg-red-500/20 px-3 py-1.5 rounded transition-colors disabled:opacity-50 text-sm font-medium"
+                      onClick={handleDeleteSelected}
+                      disabled={selectedArtifacts.size === 0 || actionLoading}
+                    >
+                      Delete Selected
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {artifacts.length === 0 ? (
+                <p className="text-slate-500 text-sm">No generated files for this project.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {artifacts.map((it) => (
+                    <li
+                      key={it.id}
+                      className="bg-slate-900 rounded px-4 py-3 flex items-center gap-4 border border-slate-800 hover:border-slate-700 transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        className="rounded bg-slate-700 border-slate-600 text-blue-500 focus:ring-blue-500 cursor-pointer w-4 h-4"
+                        checked={selectedArtifacts.has(it.id)}
+                        onChange={() => toggleSelection(it.id)}
+                      />
+                      <div className="flex-1 flex items-center justify-between gap-4 flex-wrap">
+                        <div>
+                          <div className="font-medium">{it.filename}</div>
+                          <div className="text-xs text-slate-500 mt-1">
+                            {it.kind} • {new Date(it.created_at).toLocaleString()}
+                          </div>
+                        </div>
+
+                        <a
+                          className="button-secondary text-sm px-3 py-1.5"
+                          href={`/api/generated/${it.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Download
+                        </a>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         )}
       </section>
     </main>
   );
 }
+

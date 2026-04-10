@@ -70,7 +70,6 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
           <h1 className="main-title">Microfluidic Designer</h1>
         </header>
         <main className="flex-1 flex items-center justify-center">
-          <p className="text-sm text-slate-400">Checking authentication…</p>
         </main>
       </div>
     );
@@ -102,6 +101,14 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
                 }
               >
                 Projects
+              </Link>
+              <Link
+                href="/friends"
+                className={
+                  "main-nav-link" + (path.startsWith("/friends") ? " main-nav-link--active" : "")
+                }
+              >
+                Friends
               </Link>
             </>
           )}

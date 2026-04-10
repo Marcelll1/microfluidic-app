@@ -21,6 +21,7 @@ export async function GET() {
         description,
         created_at,
         owner_id,
+        thumbnail,
         users:owner_id (
           email
         )
@@ -46,7 +47,7 @@ export async function GET() {
   // READ (user)
   const { data, error } = await supabase
     .from("projects")
-    .select("id, name, description, created_at")
+    .select("id, name, description, created_at, thumbnail")
     .eq("owner_id", auth.user.id)
     .order("created_at", { ascending: false });
 

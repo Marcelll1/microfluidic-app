@@ -9,7 +9,9 @@ type Project = {
   name: string;
   description: string | null;
   created_at: string;
-  owner_email?: string;// volitelne, zobrazuje sa len adminovi
+  owner_email?: string;// volitelne, zobrazuje sa len adminovi a pri share
+  thumbnail?: string | null;
+  is_collaborator?: boolean;
 };
 
 //struktura prihlaseneho usera z api/auth/me
@@ -21,8 +23,14 @@ export default function ProjectsPage() {
 
   const [me, setMe] = useState<Me | null>(null);//bud prihlaseny user alebo null(rozhoduje sa podla toho ci je admin)
 
+  const [activeTab, setActiveTab] = useState<"my-projects" | "shared">("my-projects");
+
   const [projects, setProjects] = useState<Project[]>([]);//zoznam projektov
+  const [sharedProjects, setSharedProjects] = useState<Project[]>([]);
+  
   const [loading, setLoading] = useState(true);//ci sa nacitavaju projekty
+  const [sharedLoading, setSharedLoading] = useState(true);
+  
   const [creating, setCreating] = useState(false);//ci sa vytvara novy projekt
 
   const [name, setName] = useState("");//nazov noveho projektu
@@ -75,6 +83,31 @@ export default function ProjectsPage() {
     //nastavi nacitane projekty do stavu
     setProjects(Array.isArray(data) ? data : []);
     setLoading(false);
+  }
+
+  async function loadSharedProjects() {
+    setSharedLoading(true);
+    let res: Response;
+    try {
+      res = await fetch("/api/projects/shared");
+    } catch (err) {
+      console.error("Network error while loading shared projects", err);
+      setSharedLoading(false);
+      return;
+    }
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    if (!res.ok) {
+      console.error("Failed to load shared projects:", data);
+      setSharedLoading(false);
+      return;
+    }
+    setSharedProjects(Array.isArray(data) ? data : []);
+    setSharedLoading(false);
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -220,9 +253,9 @@ export default function ProjectsPage() {
       return;
     }
 
-    //ak generovanie prebehlo uspesne, zobrazi spravu a presmeruje na dashboard
+    //ak generovanie prebehlo uspesne, zobrazi spravu a presmeruje na details projektu
     alert(`Generated: ${json.artifact.filename}`);
-    router.push("/dashboard");
+    router.push(`/projects/${id}/details`);
   }
 
   // Exportuje projekt ako VTK subor pre ParaView
@@ -245,31 +278,42 @@ export default function ProjectsPage() {
     URL.revokeObjectURL(url);
   }
 
-  //exportuje projekt ako JSON subor pomocou api/projects/:id/export
-  async function exportProject(id: string) {
-    const res = await fetch(`/api/projects/${id}/export`); // READ (export)
-
-    //ak export zlyhal, zobrazi text odpovede ako chybu
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      alert(`Export failed: ${t}`);
+  async function cloneProject(id: string) {
+    if (!confirm("Clone this project into your account?")) return;
+    
+    let res: Response;
+    try {
+      res = await fetch(`/api/projects/${id}/clone`, {
+        method: "POST",
+      });
+    } catch (err) {
+      console.error("Network error while cloning", err);
       return;
     }
 
-    //vytvori a stiahne JSON subor s datami projektu
-    const blob = new Blob([await res.text()], { type: "application/json" });//ziska textovu odpoved a vytvori z nej blob
-    const url = URL.createObjectURL(blob);//vytvori URL pre blob (docasny download link)
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `project_${id}.json`;
-    a.click();
-    URL.revokeObjectURL(url);//uvolni URL po stiahnuti
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+
+    if (!res.ok) {
+      console.error("Clone failed:", data);
+      alert(data?.error ?? "Clone failed.");
+      return;
+    }
+
+    alert("Project cloned successfully!");
+    setActiveTab("my-projects");
+    await loadProjects();
   }
 
   //spusti sa raz po prvom renderi
   useEffect(() => {
     void loadMe();//nacita info o prihlasenom userovi
     void loadProjects();//nacita projekty
+    void loadSharedProjects();
   }, []);
 
   return (
@@ -290,99 +334,231 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      <section className="card mb-8">
-        <h2 className="text-lg font-medium mb-4">Create new project</h2>
+      <div className="flex gap-4 mb-6 border-b border-slate-800">
+        <button
+          onClick={() => setActiveTab("my-projects")}
+          className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "my-projects"
+              ? "border-blue-500 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-300"
+          }`}
+        >
+          My Projects
+        </button>
+        <button
+          onClick={() => setActiveTab("shared")}
+          className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "shared"
+              ? "border-blue-500 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-300"
+          }`}
+        >
+          Shared & Explore
+        </button>
+      </div>
 
-        <form onSubmit={handleCreate} className="flex flex-col gap-4">
-          <input
-            type="text"
-            placeholder="Project name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="form-input"
-            disabled={creating}
-          />
+      {activeTab === "my-projects" && (
+        <>
+          <section className="card mb-8">
+            <h2 className="text-lg font-medium mb-4">Create new project</h2>
+            <form onSubmit={handleCreate} className="flex flex-col gap-4">
+              <input
+                type="text"
+                placeholder="Project name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="form-input"
+                disabled={creating}
+              />
+              <textarea
+                placeholder="Description (optional)"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="form-textarea"
+                disabled={creating}
+              />
+              <button type="submit" disabled={creating} className="button-primary self-start">
+                {creating ? "Creating..." : "Create project"}
+              </button>
+            </form>
+          </section>
 
-          <textarea
-            placeholder="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="form-textarea"
-            disabled={creating}
-          />
-
-          <button type="submit" disabled={creating} className="button-primary self-start">
-            {creating ? "Creating..." : "Create project"}
-          </button>
-        </form>
-      </section>
-
-      <section className="card">
-        <h2 className="text-lg font-medium mb-4">
-          {me?.role === "admin" ? "All projects" : "Your projects"}
-        </h2>
-
-        {loading && <p className="text-slate-400">Loading projects…</p>}
-
-        {!loading && projects.length === 0 && <p className="text-slate-400">No projects yet.</p>}
-
-        {!loading && projects.length > 0 && (
-          <ul className="space-y-3">
-            {projects.map((p) => (
-              <li key={p.id} className="bg-slate-900 rounded px-4 py-3">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div>
-                    <div className="font-medium">{p.name}</div>
-                    {p.description && <div className="text-sm text-slate-400">{p.description}</div>}
-                    {p.owner_email && (
-                      <div className="text-xs text-slate-500 mt-1">
-                        Owner: <span className="font-mono">{p.owner_email}</span>
+          <section className="card">
+            <h2 className="text-lg font-medium mb-4">
+              {me?.role === "admin" ? "All projects" : "Your projects"}
+            </h2>
+            {loading && <p className="text-slate-400">Loading projects…</p>}
+            {!loading && projects.length === 0 && <p className="text-slate-400">No projects yet.</p>}
+            {!loading && projects.length > 0 && (
+              <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {projects.map((p) => (
+                  <li
+                    key={p.id}
+                    className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 group"
+                  >
+                    {/* Thumbnail section */}
+                    <div
+                      className="w-full h-40 bg-slate-950 relative border-b border-slate-800 flex items-center justify-center cursor-pointer group-hover:opacity-90 transition-opacity"
+                      onClick={() => openProject(p.id)}
+                    >
+                      {p.thumbnail ? (
+                        <img
+                          src={p.thumbnail}
+                          alt={p.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="text-slate-700 text-sm font-medium">No thumbnail</div>
+                      )}
+                      <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); renameProject(p); }}
+                          className="bg-slate-800/80 hover:bg-slate-700/80 text-white rounded p-1.5 backdrop-blur-sm"
+                          title="Rename"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
+                          className="bg-red-900/80 hover:bg-red-800/80 text-red-100 rounded p-1.5 backdrop-blur-sm"
+                          title="Delete"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       </div>
+                    </div>
+
+                    <div className="p-4 flex-1 flex flex-col">
+                      <div className="mb-4 flex-1">
+                        <div
+                          className="font-semibold text-lg cursor-pointer hover:text-blue-400 transition-colors"
+                          onClick={() => openProject(p.id)}
+                        >
+                          {p.name}
+                        </div>
+                        {p.description && (
+                          <div className="text-sm text-slate-400 mt-1 line-clamp-2">{p.description}</div>
+                        )}
+                        {p.owner_email && (
+                          <div className="text-xs text-slate-500 mt-3 flex items-center gap-1.5">
+                            <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                            <span className="font-mono truncate">{p.owner_email}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-4 border-t border-slate-800/50 flex-wrap">
+                        <a
+                          className="text-xs py-1.5 px-3 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors"
+                          href={`/projects/${p.id}/details`}
+                        >
+                          Details
+                        </a>
+                        <button
+                          onClick={() => generatePython(p.id)}
+                          className="text-xs py-1.5 px-3 bg-blue-900/50 hover:bg-blue-800/50 text-blue-200 rounded-md transition-colors"
+                        >
+                          Gen Code
+                        </button>
+                        <button
+                          onClick={() => void exportVTK(p.id)}
+                          className="text-xs py-1.5 px-3 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors"
+                        >
+                          VTK
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
+
+      {activeTab === "shared" && (
+        <section className="card">
+          <h2 className="text-lg font-medium mb-4">Shared & Explore</h2>
+          {sharedLoading && <p className="text-slate-400">Loading projects…</p>}
+          {!sharedLoading && sharedProjects.length === 0 && <p className="text-slate-400">No shared or public projects found.</p>}
+          {!sharedLoading && sharedProjects.length > 0 && (
+            <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {sharedProjects.map((p) => (
+                <li
+                  key={p.id}
+                  className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 group"
+                >
+                  {/* Thumbnail section */}
+                  <div
+                    className="w-full h-40 bg-slate-950 relative border-b border-slate-800 flex items-center justify-center cursor-pointer group-hover:opacity-90 transition-opacity"
+                    onClick={() => openProject(p.id)}
+                  >
+                    {p.thumbnail ? (
+                      <img
+                        src={p.thumbnail}
+                        alt={p.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-slate-700 text-sm font-medium">No thumbnail</div>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={() => openProject(p.id)} className="button-secondary">
-                      Open
-                    </button>
+                  <div className="p-4 flex-1 flex flex-col">
+                    <div className="mb-4 flex-1">
+                      <div
+                        className="font-semibold text-lg cursor-pointer hover:text-blue-400 transition-colors flex items-center gap-2"
+                        onClick={() => openProject(p.id)}
+                      >
+                        {p.name}
+                        {p.is_collaborator && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-green-900/50 text-green-300 rounded font-normal uppercase tracking-wider">
+                            Collab
+                          </span>
+                        )}
+                      </div>
+                      {p.description && (
+                        <div className="text-sm text-slate-400 mt-1 line-clamp-2">{p.description}</div>
+                      )}
+                      {p.owner_email && (
+                        <div className="text-xs text-slate-500 mt-3 flex items-center gap-1.5">
+                          <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                          <span className="font-mono truncate">{p.owner_email}</span>
+                        </div>
+                      )}
+                    </div>
 
-                    <button onClick={() => renameProject(p)} className="button-secondary">
-                      Rename
-                    </button>
-
-                    <a className="button-secondary" href={`/projects/${p.id}/details`}>
-                      Details
-                    </a>
-
-                    <a className="button-secondary" href={`/projects/${p.id}/artifacts`}>
-                      Artifacts
-                    </a>
-
-                    <button onClick={() => generatePython(p.id)} className="button-secondary">
-                      Generate code
-                    </button>
-
-                    <button onClick={() => exportProject(p.id)} className="button-secondary">
-                      Export JSON
-                    </button>
-
-                    <button onClick={() => void exportVTK(p.id)} className="button-secondary">
-                      Export VTK
-                    </button>
-
-                    <button
-                      onClick={() => handleDelete(p.id)}
-                      className="text-sm text-red-400 hover:text-red-300"
-                    >
-                      Delete
-                    </button>
+                    <div className="flex items-center gap-2 pt-4 border-t border-slate-800/50 flex-wrap">
+                      <a
+                        className="text-xs py-1.5 px-3 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors"
+                        href={`/projects/${p.id}/details`}
+                      >
+                        Details
+                      </a>
+                      <button
+                        onClick={() => openProject(p.id)}
+                        className="text-xs py-1.5 px-3 bg-blue-900/50 hover:bg-blue-800/50 text-blue-200 rounded-md transition-colors"
+                      >
+                        Open Editor
+                      </button>
+                      <button
+                        onClick={() => cloneProject(p.id)}
+                        className="text-xs py-1.5 px-3 bg-purple-900/40 hover:bg-purple-800/50 text-purple-200 rounded-md transition-colors ml-auto"
+                      >
+                        Clone Project
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </main>
   );
 }

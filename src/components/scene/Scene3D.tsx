@@ -510,7 +510,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     camera.position.set(simSizeRef.current.x, simSizeRef.current.y + 5, simSizeRef.current.z + 10);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.localClippingEnabled = true; // Dôležité pre zrezanie!
@@ -966,6 +966,17 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       if (updated.ok) {
         const rows = await updated.json() as DbObjectRow[];
         meshes.forEach((m, i) => { if (rows[i]) m.userData.dbId = rows[i].id; });
+      }
+
+      // --- SAVE THUMBNAIL ---
+      const canvas = mountRef.current?.querySelector("canvas");
+      if (canvas) {
+        const thumbnail = canvas.toDataURL("image/jpeg", 0.5);
+        await fetch(`/api/projects/${projectId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ thumbnail }),
+        }).catch(err => console.error("Failed to save thumbnail:", err));
       }
 
       setSaveStatus("saved");
