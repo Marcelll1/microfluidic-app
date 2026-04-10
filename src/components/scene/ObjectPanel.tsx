@@ -187,7 +187,7 @@ export default function ObjectPanel({
   const params: SceneParam[] = sceneParams;
 
   const [clipHeight, setClipHeight] = useState<number>(selected.userData.clipHeight ?? 0);
-  const [clipAngle,  setClipAngle]  = useState<number>(selected.userData.clipAngle  ?? 0);
+  const [clipAngle,  setClipAngle]  = useState<number>(selected.userData.params?.isChamfer ? 1 : 0);
   const [bevelEdges, setBevelEdges] = useState<Set<string>>(() => {
     const saved = selected.userData.params?.bevelEdges;
     if (Array.isArray(saved) && saved.length > 0) return new Set<string>(saved as string[]);
@@ -284,7 +284,7 @@ export default function ObjectPanel({
   };
 
   return (
-    <aside className="absolute right-4 top-4 w-64 bg-slate-900/95 border border-slate-700 rounded-xl p-5 shadow-2xl z-40 text-white overflow-y-auto max-h-[calc(100vh-2rem)]">
+    <aside className="absolute right-4 top-24 w-64 bg-slate-900/95 border border-slate-700 rounded-xl p-5 shadow-2xl z-40 text-white overflow-y-auto max-h-[calc(100vh-120px)]">
       <h2 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-4">Editor Objektu</h2>
 
       <div className="space-y-4">
@@ -412,56 +412,42 @@ export default function ObjectPanel({
           ))}
         </div>
 
-        {/* Šikmé Zrezanie */}
-        <div className="pt-2 border-t border-slate-800">
-          <label className="text-[10px] text-amber-500 font-bold uppercase block mb-2">Šikmé zrezanie (Výška / Uhol)</label>
-          <div className="flex gap-2">
-            <input
-              type="number" step="0.01" placeholder="Výška"
-              value={clipHeight || ""}
-              onChange={e => {
-                const v = parseFloat(e.target.value) || 0;
-                setClipHeight(v);
-                onClip(v, clipAngle);
-              }}
-              className="w-1/2 bg-black border border-slate-700 rounded p-2 text-xs text-center"
-            />
-            <input
-              type="number" placeholder="Uhol °"
-              value={clipAngle || ""}
-              onChange={e => {
-                const v = parseFloat(e.target.value) || 0;
-                setClipAngle(v);
-                onClip(clipHeight, v);
-              }}
-              className="w-1/2 bg-black border border-slate-700 rounded p-2 text-xs text-center"
-            />
-          </div>
-        </div>
 
-        {/* Zaoblenie hrán */}
+
+        {/* Úprava hrán */}
         {type === "cube" && (
           <div className="pt-2 border-t border-slate-800">
-            <label className="text-[10px] text-emerald-400 font-bold uppercase block mb-2">Zaoblenie hrán</label>
+            <label className="text-[10px] text-emerald-400 font-bold uppercase block mb-2">Zrezanie / Zaoblenie hrán</label>
             <div className="flex justify-center mb-2">
               <EdgeCubePicker
                 activeEdges={bevelEdges}
                 onChange={edges => {
                   setBevelEdges(edges);
-                  onBevel(edges, bevelRadius);
+                  onBevel(edges, bevelRadius, clipAngle === 1);
                 }}
               />
             </div>
-            <input
-              type="number" step="0.01" min="0" placeholder="Polomer"
-              value={bevelRadius || ""}
-              onChange={e => {
-                const v = Math.max(0, parseFloat(e.target.value) || 0);
-                setBevelRadius(v);
-                onBevel(bevelEdges, v);
-              }}
-              className="w-full bg-black border border-emerald-900/60 rounded p-2 text-xs text-center focus:border-emerald-500 outline-none"
-            />
+            <div className="flex flex-col gap-2">
+              <input
+                type="number" step="0.01" min="0" placeholder="Polomer / Veľkosť"
+                value={bevelRadius || ""}
+                onChange={e => {
+                  const v = Math.max(0, parseFloat(e.target.value) || 0);
+                  setBevelRadius(v);
+                  onBevel(bevelEdges, v, clipAngle === 1);
+                }}
+                className="w-full bg-black border border-emerald-900/60 rounded p-2 text-xs text-center focus:border-emerald-500 outline-none"
+              />
+              <button 
+                  onClick={() => {
+                     const isChamfer = clipAngle === 1;
+                     setClipAngle(isChamfer ? 0 : 1);
+                     onBevel(bevelEdges, bevelRadius, !isChamfer);
+                  }}
+                  className={`w-full text-xs font-bold p-1 rounded border ${clipAngle === 1 ? 'bg-amber-600 border-amber-500 text-white' : 'bg-emerald-900/60 border-emerald-800 text-emerald-400'}`}>
+                  Typ: {clipAngle === 1 ? "ŠIKMÉ ZREZANIE (Chamfer)" : "OBLÉ ZAOBLENIE (Bevel)"}
+              </button>
+            </div>
           </div>
         )}
 

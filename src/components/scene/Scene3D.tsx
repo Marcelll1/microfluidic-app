@@ -5,6 +5,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { CSG } from "three-csg-ts";
+import { VTKLoader } from "three/examples/jsm/loaders/VTKLoader.js";
 import DragMenu from "./DragMenu";
 import ObjectPanel from "./ObjectPanel";
 import SceneGraph from "./SceneGraph";
@@ -34,101 +35,7 @@ function snap(value: number, step = 0.1) {
   return Math.round(value / step) * step;
 }
 
-/**
- * Aplikuje rezaciu rovinu na objekt v WORLD-SPACE + pridá vyplnenie rezu cez stencil buffer.
- * Používa štandardnú Three.js stencil techniku zo vzorového príkladu.
- */
-function applyClipWorldSpace(obj: THREE.Object3D, height: number, angleDeg: number) {
-  const rad = THREE.MathUtils.degToRad(angleDeg);
-  // DÔLEŽITÉ: normalNormal sa nesmie mutovať medzi použitiami → každý štep clone()
-  const localNormal = new THREE.Vector3(Math.sin(rad), -Math.cos(rad), 0).normalize();
 
-  const doApply = (m: THREE.Mesh) => {
-    if (!m.material) return;
-    m.updateMatrixWorld(true);
-
-    // Normála v world space
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(m.matrixWorld);
-    const worldNormal = localNormal.clone().applyMatrix3(normalMatrix).normalize();
-    const worldPoint = localNormal.clone().multiplyScalar(-height).applyMatrix4(m.matrixWorld);
-    const constant = -worldNormal.dot(worldPoint);
-    const clipPlane = new THREE.Plane(worldNormal, constant);
-
-    // Hlavný materiál: rez + len predná strana
-    const mat = m.material as THREE.MeshStandardMaterial;
-    mat.clippingPlanes = [clipPlane];
-    mat.side = THREE.FrontSide;
-    mat.needsUpdate = true;
-    m.renderOrder = 6;
-
-    // Odstrán starú cap skupinu a jej materiály
-    const oldCap = m.getObjectByName('__clipCap__');
-    if (oldCap) {
-      oldCap.traverse(c => { if (c instanceof THREE.Mesh) (c.material as THREE.Material).dispose(); });
-      m.remove(oldCap);
-    }
-
-    const capGroup = new THREE.Group();
-    capGroup.name = '__clipCap__';
-
-    // Stencil pass BackSide – increment (s rovnakou clip rovinou ako hlavný mesh)
-    const sMat1 = new THREE.MeshBasicMaterial({
-      colorWrite: false, depthWrite: false,
-      stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc,
-      side: THREE.BackSide, clippingPlanes: [clipPlane],
-      stencilFail: THREE.IncrementWrapStencilOp,
-      stencilZFail: THREE.IncrementWrapStencilOp,
-      stencilZPass: THREE.IncrementWrapStencilOp,
-    });
-    const sMesh1 = new THREE.Mesh(m.geometry, sMat1);
-    sMesh1.renderOrder = 6;
-    capGroup.add(sMesh1);
-
-    // Stencil pass FrontSide – decrement
-    const sMat2 = new THREE.MeshBasicMaterial({
-      colorWrite: false, depthWrite: false,
-      stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc,
-      side: THREE.FrontSide, clippingPlanes: [clipPlane],
-      stencilFail: THREE.DecrementWrapStencilOp,
-      stencilZFail: THREE.DecrementWrapStencilOp,
-      stencilZPass: THREE.DecrementWrapStencilOp,
-    });
-    const sMesh2 = new THREE.Mesh(m.geometry, sMat2);
-    sMesh2.renderOrder = 6;
-    capGroup.add(sMesh2);
-
-    // Cap fill – kreslí kde stencil != 0, potom ho vynuluje (ref=0, Replace)
-    const meshColor = mat.color?.getHex() ?? 0x00aaff;
-    const capMat = new THREE.MeshStandardMaterial({
-      color: meshColor,
-      metalness: 0.1,
-      roughness: 0.75,
-      side: THREE.DoubleSide,
-      clippingPlanes: [],
-      stencilWrite: true,
-      stencilRef: 0,
-      stencilFunc: THREE.NotEqualStencilFunc,
-      stencilFail: THREE.ReplaceStencilOp,
-      stencilZFail: THREE.ReplaceStencilOp,
-      stencilZPass: THREE.ReplaceStencilOp,
-    });
-    // Veľká plocha zaplní rez – stencil test zaistí, že sa vykreslí iba prierezu
-    const capPlane = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), capMat);
-    capPlane.renderOrder = 6.1;
-    // Orientácia: plocha kolmá na localNormal, pozícia = bod rezu v lokálnom priestore
-    capPlane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), localNormal.clone());
-    capPlane.position.copy(localNormal.clone().multiplyScalar(-height));
-    capGroup.add(capPlane);
-
-    m.add(capGroup);
-  };
-
-  if (obj instanceof THREE.Group) {
-    obj.children.forEach(c => { if (c instanceof THREE.Mesh) doApply(c); });
-  } else if (obj instanceof THREE.Mesh) {
-    doApply(obj);
-  }
-}
 
 // ── Per-edge bevel geometria ────────────────────────────────────────────────
 // 12 hrán kocky: vert-fl, vert-fr, vert-bl, vert-br (zvislé)
@@ -138,26 +45,44 @@ type EdgeGroup = "Všetky" | "Zvislé rohy" | "Horné hrany" | "Dolné hrany" | 
 
 /** Vytvorí 2D tvar obdĺžnika (a×b) so selektívne zaobleným rohom (cr>0 = zaoblenie).
  *  Poradie rohov:  BL(0,0)  BR(a,0)  TR(a,b)  TL(0,b) */
-function roundedRectShape(a: number, b: number, rBL: number, rBR: number, rTR: number, rTL: number): THREE.Shape {
+function roundedRectShape(a: number, b: number, rBL: number, rBR: number, rTR: number, rTL: number, isChamfer: boolean = false): THREE.Shape {
   const s = new THREE.Shape();
   const clamp = (v: number, max1: number, max2: number) => Math.min(v, max1 / 2 - 0.001, max2 / 2 - 0.001);
   const cBL = clamp(rBL, a, b), cBR = clamp(rBR, a, b), cTR = clamp(rTR, a, b), cTL = clamp(rTL, a, b);
+  
   s.moveTo(cBL, 0);
   s.lineTo(a - cBR, 0);
-  if (cBR > 0) s.quadraticCurveTo(a, 0, a, cBR); else s.lineTo(a, 0);
+  if (cBR > 0) {
+     if (isChamfer) s.lineTo(a, cBR);
+     else s.quadraticCurveTo(a, 0, a, cBR); 
+  } else s.lineTo(a, 0);
+  
   s.lineTo(a, b - cTR);
-  if (cTR > 0) s.quadraticCurveTo(a, b, a - cTR, b); else s.lineTo(a, b);
+  if (cTR > 0) {
+     if (isChamfer) s.lineTo(a - cTR, b);
+     else s.quadraticCurveTo(a, b, a - cTR, b); 
+  } else s.lineTo(a, b);
+  
   s.lineTo(cTL, b);
-  if (cTL > 0) s.quadraticCurveTo(0, b, 0, b - cTL); else s.lineTo(0, b);
+  if (cTL > 0) {
+     if (isChamfer) s.lineTo(0, b - cTL);
+     else s.quadraticCurveTo(0, b, 0, b - cTL); 
+  } else s.lineTo(0, b);
+  
   s.lineTo(0, cBL);
-  if (cBL > 0) s.quadraticCurveTo(0, 0, cBL, 0); else s.lineTo(cBL, 0);
+  if (cBL > 0) {
+     if (isChamfer) s.lineTo(cBL, 0);
+     else s.quadraticCurveTo(0, 0, cBL, 0); 
+  } else s.lineTo(cBL, 0);
+  
   return s;
 }
 
 /** Vybuduje geometriu kocky so zaoblením ľubovoľnej podmnožiny 12 hrán. */
 function buildBevelGeometryEdges(
   w: number, h: number, d: number,
-  r: number, edges: Set<string>
+  r: number, edges: Set<string>,
+  isChamfer: boolean = false
 ): THREE.BufferGeometry {
   if (r <= 0 || edges.size === 0) {
     const g = new THREE.BoxGeometry(w, h, d);
@@ -166,29 +91,16 @@ function buildBevelGeometryEdges(
   }
   const R = (id: string) => edges.has(id) ? r : 0;
 
-  // ─── Profil 1: zvislé hrany (vert-fl, vert-fr, vert-bl, vert-br) ────────
-  // Shape v local XY: a=X(0→w), b=Z(0→d). Extrude po local Z = výška h.
-  // rotateX(-PI/2): world(X,Y,Z) = local(a, extr, -b) → po translate(0,0,d): Z = d-b
-  // Takže: BL(a=0,b=0)→(0,?,d)=back-left, BR(w,0)=back-right, TR(w,d)=front-right, TL(0,d)=front-left
-  const s1 = roundedRectShape(w, d, R("vert-bl"), R("vert-br"), R("vert-fr"), R("vert-fl"));
-  const g1 = new THREE.ExtrudeGeometry(s1, { depth: h, bevelEnabled: false, curveSegments: 8 });
+  const s1 = roundedRectShape(w, d, R("vert-bl"), R("vert-br"), R("vert-fr"), R("vert-fl"), isChamfer);
+  const g1 = new THREE.ExtrudeGeometry(s1, { depth: h, bevelEnabled: false, curveSegments: isChamfer ? 1 : 8 });
   g1.rotateX(-Math.PI / 2);
-  g1.translate(0, 0, d);   // world: X∈[0,w], Y∈[0,h], Z∈[0,d] ✓
+  g1.translate(0, 0, d);
 
-  // ─── Profil 2: hrany rovnobežné so Z (top-left, top-right, bot-left, bot-right) ─
-  // Shape v local XY: a=X(0→w), b=Y(0→h). Extrude po local Z = hĺbka d.
-  // Žiadna rotácia: world = local.
-  // BL(0,0)=bot-left, BR(w,0)=bot-right, TR(w,h)=top-right, TL(0,h)=top-left
-  const s2 = roundedRectShape(w, h, R("bot-left"), R("bot-right"), R("top-right"), R("top-left"));
-  const g2 = new THREE.ExtrudeGeometry(s2, { depth: d, bevelEnabled: false, curveSegments: 8 });
-  // g2: X∈[0,w], Y∈[0,h], Z∈[0,d] ✓ (bez rotácie)
+  const s2 = roundedRectShape(w, h, R("bot-left"), R("bot-right"), R("top-right"), R("top-left"), isChamfer);
+  const g2 = new THREE.ExtrudeGeometry(s2, { depth: d, bevelEnabled: false, curveSegments: isChamfer ? 1 : 8 });
 
-  // ─── Profil 3: hrany rovnobežné s X (top-front, top-back, bot-front, bot-back) ──
-  // Shape v local XY: a=Z(0→d), b=Y(0→h). Extrude po local Z = šírka w.
-  // rotateY(-PI/2): world(X,Y,Z) = local(extr, b, -a) → po translate(0,0,d): Z = d-a
-  // BL(a=0,b=0)→(?,0,d)=bot-back, BR(d,0)=bot-front, TR(d,h)=top-front, TL(0,h)=top-back
-  const s3 = roundedRectShape(d, h, R("bot-back"), R("bot-front"), R("top-front"), R("top-back"));
-  const g3 = new THREE.ExtrudeGeometry(s3, { depth: w, bevelEnabled: false, curveSegments: 8 });
+  const s3 = roundedRectShape(d, h, R("bot-back"), R("bot-front"), R("top-front"), R("top-back"), isChamfer);
+  const g3 = new THREE.ExtrudeGeometry(s3, { depth: w, bevelEnabled: false, curveSegments: isChamfer ? 1 : 8 });
   g3.rotateY(Math.PI / 2);
   g3.translate(0, 0, d);   // world: X∈[0,w], Y∈[0,h], Z∈[0,d] ✓
 
@@ -226,7 +138,7 @@ function buildBevelGeometry(
   w: number, h: number, d: number,
   r: number, group: EdgeGroup
 ): THREE.BufferGeometry {
-  return buildBevelGeometryEdges(w, h, d, r, edgeGroupToSet(group));
+  return buildBevelGeometryEdges(w, h, d, r, edgeGroupToSet(group), false);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -260,6 +172,8 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
   // Multi-výber pre zlúčenie objektov
   const [multiSelect, setMultiSelect] = useState<string[]>([]);
   const multiSelectRef = useRef<string[]>([]);
+  const [showVTK, setShowVTK] = useState(false);
+  const [vtkLoading, setVtkLoading] = useState(false);
 
   // Funkcia na aktualizáciu zoznamu objektov
   const syncObjectsList = useCallback(() => {
@@ -267,6 +181,57 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     const list = sceneRef.current.children.filter(c => c.userData?.interactable === true);
     setObjects([...list]);
   }, []);
+
+  const validateScene = useCallback(() => {
+    if (!sceneRef.current) return;
+    
+    const interactables = sceneRef.current.children.filter(c => c.userData?.interactable === true);
+    
+    // Apply Highlight pre výber (selected/multiSelect)
+    interactables.forEach(c => {
+      if (c instanceof THREE.Mesh || c instanceof THREE.Group) {
+        const targetMeshes: THREE.Mesh[] = [];
+        if (c instanceof THREE.Mesh) targetMeshes.push(c);
+        if (c instanceof THREE.Group) c.traverse(ch => { if (ch instanceof THREE.Mesh) targetMeshes.push(ch); });
+
+        const isSelected = selectedMeshRef.current === c;
+        const inMulti = multiSelectRef.current.includes(c.uuid);
+        
+        targetMeshes.forEach(m => {
+          if (!m.material) return;
+          const mats = Array.isArray(m.material) ? m.material : [m.material];
+          
+          if (m.userData.originalColor === undefined && 'color' in mats[0]) {
+            m.userData.originalColor = (mats[0] as THREE.MeshStandardMaterial).color.getHex();
+          }
+
+          mats.forEach(mat => {
+            if ('emissive' in mat && 'color' in mat) {
+              const material = mat as THREE.MeshStandardMaterial;
+              
+              if (inMulti) {
+                material.color.setHex(0x22aa33);
+                material.emissive.setHex(0x113322);
+              } else if (isSelected) {
+                material.color.setHex(m.userData.originalColor ?? 0x333333);
+                material.emissive.setHex(0x333333);
+              } else {
+                material.color.setHex(m.userData.originalColor ?? 0x333333);
+                material.emissive.setHex(0x000000);
+              }
+              material.needsUpdate = true;
+            }
+          });
+        });
+      }
+    });
+  }, []);
+
+  // Validation effect
+  useEffect(() => {
+    validateScene();
+  }, [objects, transform, validateScene, multiSelect, simSize]);
+
 
   // --- API FUNKCIE (ZACHOVANÉ) ---
   const createObjectInDB = useCallback(async (payload: any) => {
@@ -279,22 +244,12 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
   }, []);
 
   const patchObjectInDB = useCallback(async (dbId: string, patch: any) => {
-    if (!projectId) return;
-    await fetch(`/api/objects/${dbId}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
-    });
-  }, [projectId]);
+    // Vypnuté okamžité ukladanie, teraz ukladá iba tlačidlo SAVE
+  }, []);
 
   const patchSelectedDebounced = useCallback((patch: any) => {
-    const mesh = selectedMeshRef.current;
-    const dbId = mesh?.userData?.dbId;
-    if (!mesh || !dbId || !projectId) return;
-
-    if (patchTimerRef.current) window.clearTimeout(patchTimerRef.current);
-    patchTimerRef.current = window.setTimeout(() => {
-      void patchObjectInDB(dbId, patch);
-    }, 250);
-  }, [patchObjectInDB, projectId]);
+    // Vypnuté auto-ukladanie po každom kroku
+  }, []);
 
   // Pomocná funkcia na vytvorenie meshu z DB
   const createMeshFromRow = useCallback((row: DbObjectRow): THREE.Object3D => {
@@ -358,7 +313,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         let geom: THREE.BufferGeometry;
         if (String(part.type || "").toLowerCase() === "cube") {
           const edges2 = pp.bevelEdges ? new Set<string>(pp.bevelEdges as string[]) : edgeGroupToSet((pp.bevelGroup as EdgeGroup) || "Všetky");
-          geom = buildBevelGeometryEdges(pp.width||1, pp.height||1, pp.depth||1, pp.bevelRadius||0, edges2);
+          geom = buildBevelGeometryEdges(pp.width||1, pp.height||1, pp.depth||1, pp.bevelRadius||0, edges2, !!pp.isChamfer);
         } else {
           geom = new THREE.CylinderGeometry(pp.radiusTop||0.5, pp.radiusBottom||0.5, pp.height||1, 32);
         }
@@ -381,7 +336,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
     if (row.type === "cube") {
       const edges = p.bevelEdges ? new Set<string>(p.bevelEdges as string[]) : edgeGroupToSet((p.bevelGroup as EdgeGroup) || "Všetky");
-      geometry = buildBevelGeometryEdges(w, h, d, bevel, edges);
+      geometry = buildBevelGeometryEdges(w, h, d, bevel, edges, !!p.isChamfer);
     } else {
       geometry = new THREE.CylinderGeometry(p.radiusTop || 0.5, p.radiusBottom || 0.5, p.height || 1, 32);
     }
@@ -409,7 +364,6 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
     // Obnov zrezanie zo uložených parametrov
     if (p.clipHeight || p.clipAngle) {
-      applyClipWorldSpace(mesh, p.clipHeight || 0, p.clipAngle || 0);
     }
 
     return mesh;
@@ -632,16 +586,12 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       let sX = snap(intersection.x, 0.1);
       let sZ = snap(intersection.z, 0.1);
       
-      // Ohraničenie voči LB sieti
-      sX = Math.max(0, Math.min(sX, simSizeRef.current.x));
-      sZ = Math.max(0, Math.min(sZ, simSizeRef.current.z));
-
+      // Neohraničujeme voči LB sieti - ESPResSo zvláda pozíciu mimo simulácie
       const mesh = selectedMeshRef.current;
       mesh.position.set(sX, mesh.position.y, sZ);
       setTransform(prev => ({ ...prev, x: sX, z: sZ }));
       // Re-aplikuj rez keď sa objekt hýbe
-      if (mesh.userData.clipHeight || mesh.userData.clipAngle) {
-        applyClipWorldSpace(mesh, mesh.userData.clipHeight || 0, mesh.userData.clipAngle || 0);
+      if (false) {
       }
     };
 
@@ -666,16 +616,15 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       const delta = -Math.sign(e.deltaY) * 0.1;
       mesh.position.addScaledVector(dir, delta);
       
-      // Znovu ohraničenie
-      mesh.position.x = Math.max(0, Math.min(snap(mesh.position.x, 0.1), simSizeRef.current.x));
-      mesh.position.y = Math.max(0, Math.min(snap(mesh.position.y, 0.1), simSizeRef.current.y));
-      mesh.position.z = Math.max(0, Math.min(snap(mesh.position.z, 0.1), simSizeRef.current.z));
+      // Neobmedzujeme
+      mesh.position.x = snap(mesh.position.x, 0.1);
+      mesh.position.y = Math.max(0, snap(mesh.position.y, 0.1));
+      mesh.position.z = snap(mesh.position.z, 0.1);
 
       setTransform(prev => ({ ...prev, x: mesh.position.x, y: mesh.position.y, z: mesh.position.z }));
       patchSelectedDebounced({ pos_x: mesh.position.x, pos_y: mesh.position.y, pos_z: mesh.position.z });
       // Re-aplikuj rez keď sa objekt hýbe
-      if (mesh.userData.clipHeight || mesh.userData.clipAngle) {
-        applyClipWorldSpace(mesh, mesh.userData.clipHeight || 0, mesh.userData.clipAngle || 0);
+      if (false) {
       }
     };
 
@@ -750,9 +699,10 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
     const mesh = new THREE.Mesh(geometry, material);
     
-    // Obmedzenie dropu do LB
-    point.x = Math.max(0, Math.min(snap(point.x, 0.1), simSize.x));
-    point.z = Math.max(0, Math.min(snap(point.z, 0.1), simSize.z));
+    // Neobmedzujeme na simbox
+    point.x = snap(point.x, 0.1);
+    point.y = Math.max(0, snap(point.y, 0.1));
+    point.z = snap(point.z, 0.1);
     mesh.position.copy(point);
 
     mesh.userData = { interactable: true, type: dragType, params, dbId: undefined, name: params.name, clipHeight: 0, clipAngle: 0, bevelRadius: 0 };
@@ -1015,6 +965,72 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     URL.revokeObjectURL(url);
   }, []);
 
+  // --- KONTROLA TVAROV (GAPS) ---
+  const checkGeometryGaps = useCallback(() => {
+    if (!sceneRef.current) return;
+    const interactables = sceneRef.current.children.filter((c): c is THREE.Mesh | THREE.Group => 
+      c.userData?.interactable === true && (c instanceof THREE.Mesh || c instanceof THREE.Group)
+    );
+    
+    let gapFound = false;
+    let gapDetails: string[] = [];
+
+    const processObject = (p: any, type: string, name: string) => {
+      const w = Number(p.width ?? p.w ?? 1);
+      const h = Number(p.height ?? p.h ?? 1);
+      const d = Number(p.depth ?? p.d ?? 1);
+      const r = Number(p.bevelRadius ?? 0);
+      
+      // 1. Skontroluj zaoblené hrany
+      if (r > 0) {
+        const maxR = Math.min(w / 2, h / 2, d / 2);
+        if (r >= maxR) {
+          gapFound = true;
+          gapDetails.push(`- [${name}]: Polomer zaoblenia (${r}) je príliš veľký. V ESPResSo to vygeneruje prerazenú geometriu. Maximálne povolené zaoblenie pre tento rozmer je < ${maxR}.`);
+        }
+      }
+      
+      // 2. Skontroluj zrezania
+      const ch = Number(p.clipHeight ?? 0);
+      const ca = Number(p.clipAngle ?? 0);
+      if (ch !== 0 || ca !== 0) {
+         if (ch >= h || ch < 0) {
+           gapFound = true;
+           gapDetails.push(`- [${name}]: Zrezanie (výška ${ch}) je nastavené na príliš hrubú úroveň. Rovina odsekne celý objekt alebo jeho spodnú podstavu, čo môže v ESPResSo tvoriť nedefinovanú hranicu.`);
+         } else if (ca !== 0) {
+           // Jednoduchý test – či sklon zrezania prečnieva spodnú stranu pri danom šírke:
+           // tan(u Uhol) * w -> koľko výšky zoberie rez pozdĺž šírky.
+           // Ak ch - zoberie viac ako h, zreže ho úplne atď.
+           const cutDrop = w * Math.tan(Math.abs(ca) * Math.PI / 180);
+           if (ch - cutDrop < 0) {
+             gapFound = true;
+             gapDetails.push(`- [${name}]: Uhol zrezania (${ca}°) pri danej výške rezu pretne samotnú podstavu geometrie. ESPResSo nedokáže spojiť rez do jedného plného telesa.`);
+           }
+         }
+      }
+    };
+
+    interactables.forEach(c => {
+      const t = String(c.userData.type || "");
+      const p = c.userData.params || {};
+      const name = c.userData.name || t;
+
+      if (t === "merged" && Array.isArray(p.parts)) {
+         p.parts.forEach((part: any, i: number) => {
+            processObject(part.params || {}, part.type || "", `${name} (časť ${i+1})`);
+         });
+      } else {
+         processObject(p, t, name);
+      }
+    });
+
+    if (gapFound) {
+      alert("⚠️ BOLI NÁJDENÉ POTENCIÁLNE MEDZERY/CHYBY TVAROV PRE ESPRESSO:\n\n" + gapDetails.join("\n\n"));
+    } else {
+      alert("✅ Kontrola zrezaní a zaoblení prebehla úspešne. Parametre sú v bezpečných limitoch a nevygenerujú sa žiadne interné medzery.");
+    }
+  }, []);
+
   // --- DELETE & UPDATE ---
   const deleteSelected = useCallback(async () => {
     if (!selectedMeshRef.current || !sceneRef.current) return;
@@ -1099,9 +1115,8 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     const mesh = selectedMeshRef.current;
     
     let v = value;
-    if (field === 'x') v = Math.max(0, Math.min(v, simSize.x));
-    if (field === 'y') v = Math.max(0, Math.min(v, simSize.y));
-    if (field === 'z') v = Math.max(0, Math.min(v, simSize.z));
+    // Neoverujeme limity X/Y/Z podľa simSize
+    if (field === 'y') v = Math.max(0, v);
 
     if (field === 'x' || field === 'y' || field === 'z') mesh.position[field] = v;
     if (field === 'rotX') mesh.rotation.x = THREE.MathUtils.degToRad(v);
@@ -1122,8 +1137,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     });
 
     // Re-aplikuj zrezanie v novom world-space (rotácia/pohyb mohli zmeniť orientáciu)
-    if (mesh.userData.clipHeight || mesh.userData.clipAngle) {
-      applyClipWorldSpace(mesh, mesh.userData.clipHeight || 0, mesh.userData.clipAngle || 0);
+    if (false) {
     }
   };
 
@@ -1139,16 +1153,14 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       const { width = 1, height = 1, depth = 1, bevelRadius = 0, bevelEdges, bevelGroup } = newParams;
       const edges = bevelEdges ? new Set<string>(bevelEdges as string[]) : edgeGroupToSet(bevelGroup as EdgeGroup);
       mesh.geometry.dispose();
-      mesh.geometry = buildBevelGeometryEdges(width, height, depth, bevelRadius, edges);
+      mesh.geometry = buildBevelGeometryEdges(width, height, depth, bevelRadius, edges, !!newParams.isChamfer);
       if (newParams.clipHeight || newParams.clipAngle) {
-        applyClipWorldSpace(mesh, newParams.clipHeight || 0, newParams.clipAngle || 0);
       }
     } else if (type === "cylinder" && mesh instanceof THREE.Mesh) {
       const { radiusTop = 0.5, radiusBottom = 0.5, height = 1 } = newParams;
       mesh.geometry.dispose();
       mesh.geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 32);
       if (newParams.clipHeight || newParams.clipAngle) {
-        applyClipWorldSpace(mesh, newParams.clipHeight || 0, newParams.clipAngle || 0);
       }
     }
 
@@ -1167,27 +1179,25 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     mesh.userData.params = { ...mesh.userData.params, clipHeight: height, clipAngle: angleDeg };
 
     // Aplikuj rez v world-space (funguje aj pre rotované objekty)
-    applyClipWorldSpace(mesh, height, angleDeg);
 
     // Ulož do DB
     patchSelectedDebounced({ params: mesh.userData.params });
   };
 
-  const updateBevel = (edges: Set<string>, radius: number) => {
+  const updateBevel = (edges: Set<string>, radius: number, isChamfer: boolean = false) => {
     const mesh = selectedMeshRef.current;
     if (!mesh || !(mesh instanceof THREE.Mesh) || mesh.userData.type !== "cube") return;
     const p = mesh.userData.params || {};
     const w = p.width || 1, h = p.height || 1, d = p.depth || 1;
 
     if (mesh.geometry) mesh.geometry.dispose();
-    mesh.geometry = buildBevelGeometryEdges(w, h, d, radius, edges);
+    mesh.geometry = buildBevelGeometryEdges(w, h, d, radius, edges, isChamfer);
 
     mesh.userData.bevelRadius = radius;
     mesh.userData.bevelEdges = Array.from(edges);
-    mesh.userData.params = { ...mesh.userData.params, bevelRadius: radius, bevelEdges: Array.from(edges) };
+    mesh.userData.params = { ...mesh.userData.params, bevelRadius: radius, bevelEdges: Array.from(edges), isChamfer: isChamfer };
 
-    if (mesh.userData.clipHeight || mesh.userData.clipAngle) {
-      applyClipWorldSpace(mesh, mesh.userData.clipHeight || 0, mesh.userData.clipAngle || 0);
+    if (false) {
     }
 
     patchSelectedDebounced({ params: mesh.userData.params });
@@ -1233,6 +1243,15 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         >
           Export STL
         </button>
+        {/* Check Gaps in Geometry */}
+        <button
+          onClick={checkGeometryGaps}
+          className="px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition border bg-fuchsia-800 hover:bg-fuchsia-600 border-fuchsia-600 text-white"
+          title="Skontroluje medzery zrezaných a zaoblených objektov, aby sa správne vygenerovali v ESPResSo"
+        >
+          Kontrola tvarov a medzier
+        </button>
+
         <div className="w-px h-8 bg-slate-700"></div>
         {/* Save Scene */}
         <button

@@ -176,7 +176,7 @@ export function generatePythonBoundaries(objects: DbObj[], settings?: any) {
     // V ESPResSo sa proste pouzije
   }
 
-function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: number, h: number, d: number, rx: number, ry: number, rz: number, bevel: number, edgesRaw: string[] | undefined, groupRaw: string | undefined) {
+function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: number, h: number, d: number, rx: number, ry: number, rz: number, bevel: number, edgesRaw: string[] | undefined, groupRaw: string | undefined, isChamfer: boolean) {
     let edges = edgesRaw ? new Set(edgesRaw) : edgeGroupToSet(groupRaw || "Všetky");
     let r = Math.min(bevel, w / 2.0, h / 2.0, d / 2.0);
     if (r <= 0 || edges.size === 0) {
@@ -320,7 +320,7 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
       const d = f(p.depth ?? p.d ?? 1) * sz;
       const bevel = f(p.bevelRadius ?? 0);
 
-      handleCube(`Object ${idx}`, px, py, pz, w, h, d, rx, ry, rz, bevel, p.bevelEdges, p.bevelGroup);
+      handleCube(`Object ${idx}`, px, py, pz, w, h, d, rx, ry, rz, bevel, p.bevelEdges, p.bevelGroup, !!p.isChamfer);
       continue;
     }
 
@@ -357,7 +357,7 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
           const d = f(pp.depth ?? pp.d ?? 1) * f(pp.scaleZ ?? 1.0);
           const bevel = f(pp.bevelRadius ?? 0);
           
-          handleCube(`Merged ${idx} Part ${pi+1}`, pcx, pcy, pcz, w, h, d, local_rx, local_ry, local_rz, bevel, pp.bevelEdges, pp.bevelGroup);
+          handleCube(`Merged ${idx} Part ${pi+1}`, pcx, pcy, pcz, w, h, d, local_rx, local_ry, local_rz, bevel, pp.bevelEdges, pp.bevelGroup, !!pp.isChamfer);
         } else if (pt === "cylinder") {
           const sx = f(pp.scaleX ?? 1.0);
           const sz = f(pp.scaleZ ?? 1.0);

@@ -3,7 +3,7 @@ import * as THREE from "three";
 
 export default function SceneGraph({ objects, selectedId, onSelect }: any) {
   return (
-    <div className="absolute left-56 top-4 w-52 bg-slate-900/90 border border-slate-700 rounded-lg p-3 z-40 max-h-[60vh] overflow-y-auto shadow-xl">
+    <div className="absolute left-56 top-24 w-52 bg-slate-900/90 border border-slate-700 rounded-lg p-3 z-40 max-h-[calc(100vh-120px)] overflow-y-auto shadow-xl">
       <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Objekty v scéne</h3>
       
       <div className="flex flex-col gap-1">

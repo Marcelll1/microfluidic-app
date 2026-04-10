@@ -131,14 +131,6 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
         </nav>
 
         <div className="flex items-center gap-3">
-          {isEditor && (
-            <button
-              onClick={() => document.dispatchEvent(new CustomEvent("saveScene"))}
-              className="button-primary"
-            >
-              Save Scene
-            </button>
-          )}
           <LogoutButton />
         </div>
       </header>
