@@ -17,7 +17,7 @@ export async function POST(
   // načítanie projektu
   const { data: project, error: e1 } = await supabase
     .from("projects")
-    .select("id,owner_id,name")
+    .select("id,owner_id,name,settings")
     .eq("id", projectId)
     .maybeSingle();
 
@@ -41,7 +41,7 @@ export async function POST(
   if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
 
   // generovanie Python kódu pre hranice
-  const code = generatePythonBoundaries(objects ?? []);// funkcia na generovanie kódu
+  const code = generatePythonBoundaries(objects ?? [], project.settings?.enabled ? project.settings : {});// funkcia na generovanie kódu
   const safeName = String(project.name ?? "project").replace(/[^a-z0-9_-]+/gi, "_");// bezpečný názov súboru
   const filename = `boundaries_${safeName}.py`;// názov súboru
 

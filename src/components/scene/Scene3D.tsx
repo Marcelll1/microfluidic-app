@@ -8,6 +8,7 @@ import { CSG } from "three-csg-ts";
 import DragMenu from "./DragMenu";
 import ObjectPanel from "./ObjectPanel";
 import SceneGraph from "./SceneGraph";
+import SimSettingsPanel from "./SimSettingsPanel";
 
 type ObjectType = "cube" | "cylinder" | "rbc" | "group" | "merged" | "__lb_settings__";
 
@@ -1194,6 +1195,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
   return (
     <div className="relative flex h-full w-full bg-black">
+      <SimSettingsPanel projectId={projectId} />
       {/* Horný Panel LB Siete */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-6 bg-slate-900/90 px-6 py-3 rounded-2xl shadow-xl border border-slate-700">
         <div className="flex flex-col">

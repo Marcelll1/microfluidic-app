@@ -1,19 +1,6 @@
 
-//typ objektu ktory ocakavam z DB
-type DbObj = {
-  type: string;
-  pos_x: number;
-  pos_y: number;
-  pos_z: number;
-  rotation_y?: number | null;
-  params?: any;
-};
-
-//pomocna funkcia na formatovanie cisiel na 6 desatinnych miest, ak nieje cislo tak vrati 0
-function f(n: unknown) {
-  const x = typeof n === "number" && Number.isFinite(n) ? n : 0;
-  return Number(x.toFixed(6));
-}
+import { DbObj } from "../types/shapes";
+import { f, eulerTransform, edgeGroupToSet } from "./generators/mathUtils";
 
 /**
  * Generates python code snippet for BOUNDARIES section.
@@ -25,32 +12,8 @@ function f(n: unknown) {
  *  - pos_* are used as "corner" for rhomboid (matches your current modeling approach)
  *  - cylinder uses center, axis fixed to z; if you later store axis/rotation, extend here.
  */
-export function generatePythonBoundaries(objects: DbObj[]) {
+export function generatePythonBoundaries(objects: DbObj[], settings?: any) {
   const lines: string[] = []; 
-
-  function eulerTransform(x: number, y: number, z: number, rx: number, ry: number, rz: number): [number, number, number] {
-    let cx = Math.cos(rx), sx = Math.sin(rx);
-    let cy = Math.cos(ry), sy = Math.sin(ry);
-    let cz = Math.cos(rz), sz = Math.sin(rz);
-
-    let m11 = cy * cz;
-    let m12 = -cy * sz;
-    let m13 = sy;
-
-    let m21 = cx * sz + sx * sy * cz;
-    let m22 = cx * cz - sx * sy * sz;
-    let m23 = -sx * cy;
-
-    let m31 = sx * sz - cx * sy * cz;
-    let m32 = sx * cz + cx * sy * sz;
-    let m33 = cx * cy;
-
-    return [
-      x * m11 + y * m12 + z * m13,
-      x * m21 + y * m22 + z * m23,
-      x * m31 + y * m32 + z * m33
-    ];
-  }
 
   let minX = 99999, minY = 99999, minZ = 99999;
   let maxX = -99999, maxY = -99999, maxZ = -99999;
@@ -67,7 +30,7 @@ export function generatePythonBoundaries(objects: DbObj[]) {
   // Precalculates bounds for everything
   objects.forEach((o) => {
     const t = String(o.type || "").toLowerCase();
-    const p = o.params ?? {};
+    const p = (o.params as any) ?? {};
     let px = f(o.pos_x), py = f(o.pos_y), pz = f(o.pos_z);
     
     if (t === "cube" || t === "rhomboid") {
@@ -168,11 +131,15 @@ export function generatePythonBoundaries(objects: DbObj[]) {
   lines.push("boxY = " + boxY);
   lines.push("boxZ = " + boxZ);
   lines.push("system = espressomd.System(box_l=[boxX, boxY, boxZ])");
-  lines.push("system.time_step = 0.1");
-  lines.push("system.cell_system.skin = 0.2");
-  lines.push("lbf = espressomd.lb.LBFluid(agrid=1.0, dens=1.0, visc=1.0, tau=0.1)");
+  lines.push(`system.time_step = ${settings?.time_step || 0.1}`);
+  lines.push(`system.cell_system.skin = ${settings?.skin || 0.2}`);
+  lines.push(`lbf = espressomd.lb.LBFluid(agrid=${settings?.agrid || 1.0}, dens=${settings?.dens || 1.0}, visc=${settings?.visc || 1.0}, tau=${settings?.tau || 0.1})`);
   lines.push("system.actors.add(lbf)");
-  lines.push("system.thermostat.set_lb(LB_fluid=lbf, gamma=1.5)");
+  lines.push(`system.thermostat.set_lb(LB_fluid=lbf, gamma=${settings?.gamma || 1.5})`);
+  
+  if (settings?.duration) {
+    lines.push(`DURATION = ${settings.duration}`);
+  }
   lines.push("");
   lines.push("boundaries = []");
   lines.push("");
@@ -208,17 +175,6 @@ export function generatePythonBoundaries(objects: DbObj[]) {
     // OIF nemusi mat priamo output_vtk_sphere v tomto kontexte, nahradime valcom s l=0.01 pre vtk zobrazenie alebo preskocime vtk
     // V ESPResSo sa proste pouzije
   }
-
-  function edgeGroupToSet(group: string | undefined): Set<string> {
-  switch (group) {
-    case "Všetky": return new Set(["vert-fl","vert-fr","vert-bl","vert-br","top-front","top-back","top-left","top-right","bot-front","bot-back","bot-left","bot-right"]);
-    case "Zvislé rohy": return new Set(["vert-fl","vert-fr","vert-bl","vert-br"]);
-    case "Horné hrany": return new Set(["top-front","top-back","top-left","top-right"]);
-    case "Dolné hrany": return new Set(["bot-front","bot-back","bot-left","bot-right"]);
-    case "Bočné hrany": return new Set(["top-left","top-right","bot-left","bot-right"]);
-    default: return new Set();
-  }
-}
 
 function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: number, h: number, d: number, rx: number, ry: number, rz: number, bevel: number, edgesRaw: string[] | undefined, groupRaw: string | undefined) {
     let edges = edgesRaw ? new Set(edgesRaw) : edgeGroupToSet(groupRaw || "Všetky");
@@ -344,7 +300,7 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
   for (const o of objects) {
     idx++;
     const t = String(o.type || "").toLowerCase();
-    const p = o.params ?? {};
+    const p = (o.params as any) ?? {};
 
     const px = f(o.pos_x) + shiftX;
     const py = f(o.pos_y) + shiftY;

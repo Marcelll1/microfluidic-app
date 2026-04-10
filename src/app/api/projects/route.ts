@@ -22,6 +22,7 @@ export async function GET() {
         created_at,
         owner_id,
         thumbnail,
+        is_template,
         users:owner_id (
           email
         )
@@ -38,6 +39,8 @@ export async function GET() {
       description: p.description,
       created_at: p.created_at,
       owner_id: p.owner_id,
+      thumbnail: p.thumbnail,
+      is_template: p.is_template,
       owner_email: p.users?.email ?? "unknown", //priradenie emailu vlastníka alebo "unknown"
     }));
 
@@ -47,9 +50,9 @@ export async function GET() {
   // READ (user)
   const { data, error } = await supabase
     .from("projects")
-    .select("id, name, description, created_at, thumbnail")
-    .eq("owner_id", auth.user.id)
-    .order("created_at", { ascending: false });
+      .select("id, name, description, created_at, thumbnail, is_template")
+      .eq("owner_id", auth.user.id)
+      .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data ?? []);
@@ -65,6 +68,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null); //ošetrenie chýb pri parsovaní JSON
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const description = typeof body?.description === "string" ? body.description.trim() : "";
+  const is_template = !!body?.is_template;
 
   // validácia vstupu na serveri
   if (!name) return NextResponse.json({ error: "Name is required." }, { status: 400 });
@@ -79,6 +83,7 @@ export async function POST(req: Request) {
     .insert({
       name,
       description: description || null,
+      is_template,
       owner_id: auth.user.id,
     })
     .select("*") //vrátiť vložený riadok

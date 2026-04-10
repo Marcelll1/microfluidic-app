@@ -12,6 +12,7 @@ type Project = {
   owner_email?: string;// volitelne, zobrazuje sa len adminovi a pri share
   thumbnail?: string | null;
   is_collaborator?: boolean;
+  is_template?: boolean;
 };
 
 //struktura prihlaseneho usera z api/auth/me
@@ -23,15 +24,18 @@ export default function ProjectsPage() {
 
   const [me, setMe] = useState<Me | null>(null);//bud prihlaseny user alebo null(rozhoduje sa podla toho ci je admin)
 
-  const [activeTab, setActiveTab] = useState<"my-projects" | "shared">("my-projects");
+  const [activeTab, setActiveTab] = useState<"my-projects" | "shared" | "templates">("my-projects");
 
   const [projects, setProjects] = useState<Project[]>([]);//zoznam projektov
   const [sharedProjects, setSharedProjects] = useState<Project[]>([]);
+  const [templates, setTemplates] = useState<Project[]>([]);
   
   const [loading, setLoading] = useState(true);//ci sa nacitavaju projekty
   const [sharedLoading, setSharedLoading] = useState(true);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
   
   const [creating, setCreating] = useState(false);//ci sa vytvara novy projekt
+  const [creatingTemplate, setCreatingTemplate] = useState(false);
 
   const [name, setName] = useState("");//nazov noveho projektu
   const [description, setDescription] = useState("");//popis noveho projektu
@@ -110,6 +114,31 @@ export default function ProjectsPage() {
     setSharedLoading(false);
   }
 
+  async function loadTemplates() {
+    setTemplatesLoading(true);
+    let res: Response;
+    try {
+      res = await fetch("/api/projects/templates");
+    } catch (err) {
+      console.error("Network error while loading templates", err);
+      setTemplatesLoading(false);
+      return;
+    }
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    if (!res.ok) {
+      console.error("Failed to load templates:", data);
+      setTemplatesLoading(false);
+      return;
+    }
+    setTemplates(Array.isArray(data) ? data : []);
+    setTemplatesLoading(false);
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();//zabranenie refreshu stranky
 
@@ -159,6 +188,77 @@ export default function ProjectsPage() {
     setName("");
     setDescription("");
     await loadProjects();
+  }
+
+  async function handleCreateTemplate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) {
+      alert("Template name is required.");
+      return;
+    }
+
+    setCreatingTemplate(true);
+    let res: Response;
+    try {
+      res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim() || null,
+          is_template: true,
+        }),
+      });
+    } catch (err) {
+      console.error("Network error while creating template", err);
+      setCreatingTemplate(false);
+      return;
+    }
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    setCreatingTemplate(false);
+
+    if (!res.ok) {
+      console.error("Create template failed:", data);
+      alert(data?.error ?? "Create template failed.");
+      return;
+    }
+
+    setName("");
+    setDescription("");
+    await loadTemplates();
+  }
+  
+  async function handleMakeTemplate(p: Project, isTemplate: boolean) {
+    let res: Response;
+    try {
+      res = await fetch(`/api/projects/${p.id}/template`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_template: isTemplate }),
+      });
+    } catch (err) {
+      console.error("Network error modifying template status", err);
+      return;
+    }
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      console.error("Update template status failed:", json);
+      alert(json?.error ?? "Update failed.");
+      return;
+    }
+    if (activeTab === "my-projects") {
+      await loadProjects();
+      await loadTemplates();
+    }
+    if (activeTab === "templates") {
+      await loadTemplates();
+      await loadProjects();
+    }
   }
 
   async function handleDelete(id: string) {
@@ -314,6 +414,7 @@ export default function ProjectsPage() {
     void loadMe();//nacita info o prihlasenom userovi
     void loadProjects();//nacita projekty
     void loadSharedProjects();
+    void loadTemplates();
   }, []);
 
   return (
@@ -354,6 +455,16 @@ export default function ProjectsPage() {
           }`}
         >
           Shared & Explore
+        </button>
+        <button
+          onClick={() => setActiveTab("templates")}
+          className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "templates"
+              ? "border-blue-500 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-300"
+          }`}
+        >
+          Templates
         </button>
       </div>
 
@@ -470,6 +581,19 @@ export default function ProjectsPage() {
                         >
                           VTK
                         </button>
+                        {!p.is_template && (
+                          <button
+                            onClick={() => handleMakeTemplate(p, true)}
+                            className="text-xs py-1.5 px-3 bg-indigo-900/40 hover:bg-indigo-800/50 text-indigo-200 rounded-md transition-colors ml-auto"
+                          >
+                            Make Template
+                          </button>
+                        )}
+                        {p.is_template && (
+                          <span className="text-xs py-1.5 px-3 bg-green-900/20 text-green-400 rounded-md ml-auto">
+                            Template
+                          </span>
+                        )}
                       </div>
                     </div>
                   </li>
@@ -558,6 +682,90 @@ export default function ProjectsPage() {
             </ul>
           )}
         </section>
+      )}
+
+      {activeTab === "templates" && (
+        <>
+          <section className="card mb-8">
+            <h2 className="text-lg font-medium mb-4">Create new template</h2>
+            <form onSubmit={handleCreateTemplate} className="flex flex-col gap-4">
+              <input
+                type="text"
+                placeholder="Template name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="form-input"
+                disabled={creatingTemplate}
+              />
+              <textarea
+                placeholder="Description (optional)"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="form-textarea"
+                disabled={creatingTemplate}
+              />
+              <button type="submit" disabled={creatingTemplate} className="button-primary self-start">
+                {creatingTemplate ? "Creating..." : "Create template"}
+              </button>
+            </form>
+          </section>
+
+          <section className="card">
+            <h2 className="text-lg font-medium mb-4">Project Templates</h2>
+            {templatesLoading && <p className="text-slate-400">Loading templates…</p>}
+            {!templatesLoading && templates.length === 0 && <p className="text-slate-400">No templates found.</p>}
+            {!templatesLoading && templates.length > 0 && (
+              <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {templates.map((p) => (
+                  <li
+                    key={p.id}
+                    className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 group"
+                  >
+                    <div
+                      className="w-full h-40 bg-slate-950 relative border-b border-slate-800 flex items-center justify-center cursor-pointer group-hover:opacity-90 transition-opacity"
+                      onClick={() => openProject(p.id)}
+                    >
+                      {p.thumbnail ? (
+                        <img src={p.thumbnail} alt={p.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-slate-700 text-sm font-medium">No thumbnail</div>
+                      )}
+                    </div>
+
+                    <div className="p-4 flex-1 flex flex-col">
+                      <div className="mb-4 flex-1">
+                        <div
+                          className="font-semibold text-lg cursor-pointer hover:text-blue-400 transition-colors"
+                          onClick={() => openProject(p.id)}
+                        >
+                          {p.name}
+                        </div>
+                        {p.description && (
+                          <div className="text-sm text-slate-400 mt-1 line-clamp-2">{p.description}</div>
+                        )}
+                        {p.owner_email && (
+                          <div className="text-xs text-slate-500 mt-3 flex items-center gap-1.5">
+                            <span className="inline-block w-2 h-2 rounded-full bg-indigo-500"></span>
+                            <span className="font-mono truncate">{p.owner_email}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-4 border-t border-slate-800/50 flex-wrap">
+                        <button
+                          onClick={() => cloneProject(p.id)}
+                          className="text-xs py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors"
+                        >
+                          Use Template
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
       )}
     </main>
   );

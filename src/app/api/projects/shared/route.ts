@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabaseServer";
-import { requireAuth } from "@/lib/auth";
+import { supabase } from "@/lib/supabaseServer";
+import { requireUser } from "@/lib/auth";
 
 export async function GET() {
   try {
-    const user = await requireAuth();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await requireUser();
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
-
-    const supabase = await createClient();
+    const user = auth.user;
 
     // Fetch accepted friend IDs
     const { data: friendsData } = await supabase
