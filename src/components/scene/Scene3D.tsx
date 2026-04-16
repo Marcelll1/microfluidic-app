@@ -1207,8 +1207,9 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     <div className="relative flex h-full w-full bg-black">
       <SimSettingsPanel projectId={projectId} />
       {/* Horný Panel LB Siete */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-6 bg-slate-900/90 px-6 py-3 rounded-2xl shadow-xl border border-slate-700">
-        <div className="flex flex-col">
+      <div className="absolute top-4 left-[396px] right-[280px] z-30 flex justify-center pointer-events-none">
+        <div className="flex items-center flex-wrap justify-center gap-4 xl:gap-6 bg-slate-900/90 px-4 py-3 xl:px-6 rounded-2xl shadow-xl border border-slate-700 pointer-events-auto max-w-full">
+          <div className="flex flex-col">
           <label className="text-[10px] text-sky-400 font-bold uppercase mb-1">Veľkosť simulácie (LB Sieť)</label>
           <div className="flex gap-2">
             <input type="number" value={simSize.x} onChange={e => setSimSize({...simSize, x: +e.target.value})} className="w-14 bg-black border border-slate-600 rounded p-1 text-white text-xs" />
@@ -1268,6 +1269,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
            saveStatus === "error" ? "Chyba ✗" :
            "Uložiť scénu"}
         </button>
+        </div>
       </div>
 
       <DragMenu

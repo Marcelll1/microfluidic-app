@@ -284,7 +284,7 @@ export default function ObjectPanel({
   };
 
   return (
-    <aside className="absolute right-4 top-24 w-64 bg-slate-900/95 border border-slate-700 rounded-xl p-5 shadow-2xl z-40 text-white overflow-y-auto max-h-[calc(100vh-120px)]">
+    <aside className="absolute right-4 top-4 w-64 bg-slate-900/95 border border-slate-700 rounded-xl p-5 shadow-2xl z-40 text-white overflow-y-auto max-h-[calc(100vh-32px)]">
       <h2 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-4">Editor Objektu</h2>
 
       <div className="space-y-4">
