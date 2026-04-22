@@ -117,21 +117,21 @@ export default function DragMenu({ onStartDrag, onImportRBC, sceneParams, onPara
   }
 
   return (
-    <aside className="w-48 bg-slate-900 border-r border-slate-800 p-4 flex flex-col gap-4 z-40 overflow-y-auto">
-      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Pridať objekt</h3>
+    <aside className="w-48 bg-[var(--card-bg)] border-r border-[var(--border)] p-4 flex flex-col gap-4 z-40 overflow-y-auto">
+      <h3 className="text-xs font-bold text-[var(--foreground)] opacity-70 uppercase tracking-widest mb-2">Pridať objekt</h3>
 
       <div draggable onDragStart={() => onStartDrag("cube")}
-        className="bg-sky-600 hover:bg-sky-500 p-3 rounded text-center text-xs text-white cursor-grab font-bold transition">
+        className="bg-sky-600 hover:bg-sky-500 p-3 rounded text-center text-xs text-[var(--foreground)] cursor-grab font-bold transition">
         Kocka
       </div>
       <div draggable onDragStart={() => onStartDrag("cylinder")}
-        className="bg-amber-600 hover:bg-amber-500 p-3 rounded text-center text-xs text-white cursor-grab font-bold transition">
+        className="bg-amber-600 hover:bg-amber-500 p-3 rounded text-center text-xs text-[var(--foreground)] cursor-grab font-bold transition">
         Valec
       </div>
 
       {/* Import RBC */}
-      <div className="pt-4 border-t border-slate-800">
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Model Bunky</h3>
+      <div className="pt-4 border-t border-[var(--border)]">
+        <h3 className="text-xs font-bold text-[var(--foreground)] opacity-70 uppercase tracking-widest mb-3">Model Bunky</h3>
         <label className="block w-full bg-rose-900/30 hover:bg-rose-900/60 border border-rose-800 text-rose-400 p-3 rounded text-center text-[10px] font-bold cursor-pointer transition">
           IMPORT (2 SÚBORY)
           <input type="file" multiple accept=".dat" onChange={handleRbcImport} className="hidden" />
@@ -140,8 +140,8 @@ export default function DragMenu({ onStartDrag, onImportRBC, sceneParams, onPara
       </div>
 
       {/* Parametre */}
-      <div className="pt-4 border-t border-slate-800 flex flex-col gap-2">
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Parametre</h3>
+      <div className="pt-4 border-t border-[var(--border)] flex flex-col gap-2">
+        <h3 className="text-xs font-bold text-[var(--foreground)] opacity-70 uppercase tracking-widest">Parametre</h3>
 
         {sceneParams.length === 0 && (
           <p className="text-[9px] text-slate-600 italic">Žiadne parametre.</p>
@@ -150,13 +150,13 @@ export default function DragMenu({ onStartDrag, onImportRBC, sceneParams, onPara
         {sceneParams.map(p => (
           <div key={p.name} className="flex items-center gap-1">
             <span className="text-[11px] text-emerald-400 font-mono font-bold w-8 shrink-0">{p.name}</span>
-            <span className="text-[10px] text-slate-500">=</span>
+            <span className="text-[10px] text-[var(--foreground)] opacity-70">=</span>
             <input
               type="number"
               step="any"
               defaultValue={p.value}
               onBlur={e => updateParamValue(p.name, e.target.value)}
-              className="flex-1 min-w-0 bg-black border border-slate-700 rounded p-1 text-xs text-center text-white"
+              className="flex-1 min-w-0 bg-[var(--item-bg-alpha)] border border-[var(--border)] rounded p-1 text-xs text-center text-[var(--foreground)]"
             />
             <button
               onClick={() => removeParam(p.name)}
@@ -176,7 +176,7 @@ export default function DragMenu({ onStartDrag, onImportRBC, sceneParams, onPara
             value={newParamName}
             onChange={e => setNewParamName(e.target.value)}
             onKeyDown={e => e.key === "Enter" && addParam()}
-            className="w-14 bg-black border border-slate-700 rounded p-1 text-[10px] text-white font-mono"
+            className="w-14 bg-[var(--item-bg-alpha)] border border-[var(--border)] rounded p-1 text-[10px] text-[var(--foreground)] font-mono"
           />
           <input
             type="number"
@@ -185,12 +185,12 @@ export default function DragMenu({ onStartDrag, onImportRBC, sceneParams, onPara
             value={newParamValue}
             onChange={e => setNewParamValue(e.target.value)}
             onKeyDown={e => e.key === "Enter" && addParam()}
-            className="flex-1 min-w-0 bg-black border border-slate-700 rounded p-1 text-[10px] text-white"
+            className="flex-1 min-w-0 bg-[var(--item-bg-alpha)] border border-[var(--border)] rounded p-1 text-[10px] text-[var(--foreground)]"
           />
         </div>
         <button
           onClick={addParam}
-          className="w-full bg-emerald-900/40 hover:bg-emerald-700 border border-emerald-800 text-emerald-400 hover:text-white rounded p-1.5 text-[10px] font-bold transition"
+          className="w-full bg-emerald-900/40 hover:bg-emerald-700 border border-emerald-800 text-emerald-400 hover:text-[var(--foreground)] rounded p-1.5 text-[10px] font-bold transition"
         >
           + Add parameter
         </button>

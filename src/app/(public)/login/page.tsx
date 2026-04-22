@@ -159,7 +159,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-4 text-sm text-slate-400">
+          <div className="mt-4 text-sm text-[var(--muted)]">
             <a className="underline" href="/register">
               Create account
             </a>
@@ -168,7 +168,7 @@ export default function LoginPage() {
 
         <section className="card p-4">
           <h2 className="text-lg font-medium mb-3">Forgot password</h2>
-          <p className="text-sm text-slate-400 mb-3">
+          <p className="text-sm text-[var(--muted)] mb-3">
             Send a request to admin. Admin will approve and give you a reset code.
           </p>
 

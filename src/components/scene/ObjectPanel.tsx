@@ -93,7 +93,7 @@ function EdgeCubePicker({
         >všetky</button>
         <button
           onClick={() => onChange(new Set())}
-          className="text-[8px] text-slate-500 hover:text-slate-300 border border-slate-700 hover:border-slate-500 rounded px-1.5 py-0.5 transition"
+          className="text-[8px] text-[var(--foreground)] opacity-70 hover:text-[var(--foreground)] opacity-90 border border-[var(--border)] hover:border-slate-500 rounded px-1.5 py-0.5 transition"
         >žiadne</button>
       </div>
       <span className="text-[9px] text-emerald-400 text-center leading-tight h-3">
@@ -150,8 +150,8 @@ function ExprInput({
         if (evaluated !== null) onValueChange(evaluated);
       }}
       step={step}
-      className={`bg-black border rounded p-1 text-xs text-center outline-none focus:border-sky-500 transition
-        ${invalid ? "border-red-500 text-red-400" : "border-slate-700 text-white"} ${className}`}
+      className={`bg-[var(--item-bg-alpha)] border rounded p-1 text-xs text-center outline-none focus:border-sky-500 transition
+        ${invalid ? "border-red-500 text-red-400" : "border-[var(--border)] text-[var(--foreground)]"} ${className}`}
       title={invalid ? "Neplatný výraz" : undefined}
     />
   );
@@ -179,7 +179,7 @@ function initExprs(obj: any, transform: any): AllExprs {
 
 export default function ObjectPanel({
   selected, transform, simSize, sceneParams = [],
-  onUpdate, onDimUpdate, onClip, onBevel, onDelete,
+  onUpdate, onDimUpdate, onColorUpdate, onClip, onBevel, onDelete,
 }: any) {
   const maxX = simSize?.x ?? 10;
   const maxY = simSize?.y ?? 10;
@@ -203,6 +203,9 @@ export default function ObjectPanel({
   const [bevelRadius, setBevelRadius] = useState<number>(selected.userData.bevelRadius ?? 0);
 
   const type: string = selected.userData.type ?? "";
+  const defaultCol = type === "cube" ? "#00aaff" : type === "cylinder" ? "#ffaa00" : type === "merged" ? "#886622" : "#ffffff"; 
+  const [objColor, setObjColor] = useState<string>(selected.userData.params?.color || defaultCol); 
+
 
   // Všetky výrazy ako reťazce – NIKDY sa neprepíšu externe (zachová sa "v", "v+10" atd.)
   const [exprs, setExprs] = useState<AllExprs>(() => initExprs(selected, transform));
@@ -284,30 +287,44 @@ export default function ObjectPanel({
   };
 
   return (
-    <aside className="absolute right-4 top-4 w-64 bg-slate-900/95 border border-slate-700 rounded-xl p-5 shadow-2xl z-40 text-white overflow-y-auto max-h-[calc(100vh-32px)]">
+    <aside className="absolute right-4 top-4 w-64 bg-[var(--card-bg)]/95 border border-[var(--border)] rounded-xl p-5 shadow-2xl z-40 text-[var(--foreground)] overflow-y-auto max-h-[calc(100vh-32px)]">
       <h2 className="text-xs font-bold text-sky-400 uppercase tracking-widest mb-4">Editor Objektu</h2>
 
       <div className="space-y-4">
 
         {/* Názov */}
         <div>
-          <label className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Názov</label>
+          <label className="text-[10px] text-[var(--foreground)] opacity-70 font-bold uppercase block mb-1">Názov</label>
           <input
             type="text"
             defaultValue={selected.userData.name}
             onBlur={e => { selected.userData.name = e.target.value; }}
-            className="w-full bg-black border border-slate-700 rounded p-2 text-xs outline-none focus:border-sky-500"
+            className="w-full bg-[var(--item-bg-alpha)] border border-[var(--border)] rounded p-2 text-xs outline-none focus:border-sky-500"
+          />
+        </div>
+
+        {/* Farba */}
+        <div className="flex flex-col gap-1 mb-4">
+          <label className="text-[10px] text-[var(--foreground)] opacity-70 font-bold uppercase mb-1">Farba</label>
+          <input
+            type="color"
+            value={objColor}
+            onChange={(e) => {
+              setObjColor(e.target.value);
+              onColorUpdate?.(e.target.value);
+            }}
+            className="w-full h-8 cursor-pointer rounded bg-transparent outline-none focus:border-[var(--accent)]"
           />
         </div>
 
         {/* Pozícia X, Y, Z */}
         <div className="space-y-2">
-          <label className="text-[10px] text-slate-400 font-bold uppercase block">Pozícia</label>
+          <label className="text-[10px] text-[var(--foreground)] opacity-70 font-bold uppercase block">Pozícia</label>
           {([ ["x", maxX], ["y", maxY], ["z", maxZ] ] as [string, number][]).map(([axis, max]) => {
             const numVal = evalExpr(exprs[axis] ?? "", params) ?? (transform[axis] ?? 0);
             return (
               <div key={axis} className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-400 font-bold uppercase w-3">{axis}</span>
+                <span className="text-[10px] text-[var(--foreground)] opacity-70 font-bold uppercase w-3">{axis}</span>
                 <input
                   type="range" min={0} max={max} step={0.1}
                   value={Math.min(Math.max(numVal, 0), max)}
@@ -328,7 +345,7 @@ export default function ObjectPanel({
 
         {/* Rozmery kocky */}
         {type === "cube" && (
-          <div className="pt-2 border-t border-slate-800 space-y-2">
+          <div className="pt-2 border-t border-[var(--border)] space-y-2">
             <label className="text-[10px] text-sky-300 font-bold uppercase block">Rozmery</label>
             {(["width", "height", "depth"] as const).map(key => {
               const txt = exprs[key] ?? "";
@@ -336,14 +353,14 @@ export default function ObjectPanel({
               const bad = val === null && txt.trim() !== "";
               return (
                 <div key={key} className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400 font-bold w-10 shrink-0">{dimLabel[key]}</span>
+                  <span className="text-[10px] text-[var(--foreground)] opacity-70 font-bold w-10 shrink-0">{dimLabel[key]}</span>
                   <input
                     type="text"
                     value={txt}
                     onChange={e => handleDim(key, e.target.value)}
                     placeholder="1"
-                    className={`flex-1 min-w-0 bg-black border rounded p-1 text-xs text-center text-white outline-none focus:border-sky-500 transition
-                      ${bad ? "border-red-500 text-red-400" : "border-slate-700"}`}
+                    className={`flex-1 min-w-0 bg-[var(--item-bg-alpha)] border rounded p-1 text-xs text-center text-[var(--foreground)] outline-none focus:border-sky-500 transition
+                      ${bad ? "border-red-500 text-red-400" : "border-[var(--border)]"}`}
                   />
                 </div>
               );
@@ -353,7 +370,7 @@ export default function ObjectPanel({
 
         {/* Rozmery valca */}
         {type === "cylinder" && (
-          <div className="pt-2 border-t border-slate-800 space-y-2">
+          <div className="pt-2 border-t border-[var(--border)] space-y-2">
             <label className="text-[10px] text-sky-300 font-bold uppercase block">Rozmery</label>
             {(["radiusTop", "radiusBottom", "height"] as const).map(key => {
               const txt = exprs[key] ?? "";
@@ -361,14 +378,14 @@ export default function ObjectPanel({
               const bad = val === null && txt.trim() !== "";
               return (
                 <div key={key} className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400 font-bold w-14 shrink-0 leading-tight">{dimLabel[key]}</span>
+                  <span className="text-[10px] text-[var(--foreground)] opacity-70 font-bold w-14 shrink-0 leading-tight">{dimLabel[key]}</span>
                   <input
                     type="text"
                     value={txt}
                     onChange={e => handleDim(key, e.target.value)}
                     placeholder="1"
-                    className={`flex-1 min-w-0 bg-black border rounded p-1 text-xs text-center text-white outline-none focus:border-sky-500 transition
-                      ${bad ? "border-red-500 text-red-400" : "border-slate-700"}`}
+                    className={`flex-1 min-w-0 bg-[var(--item-bg-alpha)] border rounded p-1 text-xs text-center text-[var(--foreground)] outline-none focus:border-sky-500 transition
+                      ${bad ? "border-red-500 text-red-400" : "border-[var(--border)]"}`}
                   />
                 </div>
               );
@@ -377,7 +394,7 @@ export default function ObjectPanel({
         )}
 
         {/* Rotácie */}
-        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800">
+        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[var(--border)]">
           <label className="text-[10px] text-pink-400 font-bold uppercase block col-span-3">Rotácie</label>
           {(["rotX", "rotY", "rotZ"] as const).map(axis => (
             <div key={axis}>
@@ -395,7 +412,7 @@ export default function ObjectPanel({
         </div>
 
         {/* Skalovanie */}
-        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800">
+        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[var(--border)]">
           <label className="text-[10px] text-violet-400 font-bold uppercase block col-span-3">Skalovanie</label>
           {(["scaleX", "scaleY", "scaleZ"] as const).map(axis => (
             <div key={axis}>
@@ -416,7 +433,7 @@ export default function ObjectPanel({
 
         {/* Úprava hrán */}
         {type === "cube" && (
-          <div className="pt-2 border-t border-slate-800">
+          <div className="pt-2 border-t border-[var(--border)]">
             <label className="text-[10px] text-emerald-400 font-bold uppercase block mb-2">Zrezanie / Zaoblenie hrán</label>
             <div className="flex justify-center mb-2">
               <EdgeCubePicker
@@ -436,7 +453,7 @@ export default function ObjectPanel({
                   setBevelRadius(v);
                   onBevel(bevelEdges, v, clipAngle === 1);
                 }}
-                className="w-full bg-black border border-emerald-900/60 rounded p-2 text-xs text-center focus:border-emerald-500 outline-none"
+                className="w-full bg-[var(--item-bg-alpha)] border border-emerald-900/60 rounded p-2 text-xs text-center focus:border-emerald-500 outline-none"
               />
               <button 
                   onClick={() => {
@@ -444,7 +461,7 @@ export default function ObjectPanel({
                      setClipAngle(isChamfer ? 0 : 1);
                      onBevel(bevelEdges, bevelRadius, !isChamfer);
                   }}
-                  className={`w-full text-xs font-bold p-1 rounded border ${clipAngle === 1 ? 'bg-amber-600 border-amber-500 text-white' : 'bg-emerald-900/60 border-emerald-800 text-emerald-400'}`}>
+                  className={`w-full text-xs font-bold p-1 rounded border ${clipAngle === 1 ? 'bg-amber-600 border-amber-500 text-[var(--foreground)]' : 'bg-emerald-900/60 border-emerald-800 text-emerald-400'}`}>
                   Typ: {clipAngle === 1 ? "ŠIKMÉ ZREZANIE (Chamfer)" : "OBLÉ ZAOBLENIE (Bevel)"}
               </button>
             </div>
@@ -453,7 +470,7 @@ export default function ObjectPanel({
 
         <button
           onClick={onDelete}
-          className="w-full bg-red-900/40 hover:bg-red-600 text-red-400 hover:text-white border border-red-900/50 py-2 rounded text-[10px] font-bold mt-2 transition"
+          className="w-full bg-red-900/40 hover:bg-red-600 text-red-400 hover:text-[var(--foreground)] border border-red-900/50 py-2 rounded text-[10px] font-bold mt-2 transition"
         >
           ZMAZAŤ OBJEKT
         </button>

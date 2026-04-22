@@ -232,7 +232,7 @@ export default function ProjectDetailsPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
         <div>
           <h1 className="text-2xl font-semibold">Project details</h1>
-          <div className="text-sm text-slate-400">ID: {projectId}</div>
+          <div className="text-sm text-[var(--muted)]">ID: {projectId}</div>
         </div>
 
         <div className="flex gap-2 flex-wrap">
@@ -248,12 +248,12 @@ export default function ProjectDetailsPage() {
         </div>
       </div>
 
-      {loading && <p className="text-slate-400">Loading…</p>}
+      {loading && <p className="text-[var(--muted)]">Loading…</p>}
 
       {!loading && err && (
         <div className="card p-4">
           <div className="text-red-400 font-medium">Error</div>
-          <div className="text-slate-300 mt-1">{err}</div>
+          <div className="text-[var(--foreground)] mt-1">{err}</div>
         </div>
       )}
 
@@ -262,20 +262,20 @@ export default function ProjectDetailsPage() {
           <section className="card p-4">
             <h2 className="text-lg font-medium mb-3">Project</h2>
 
-            <div className="text-sm text-slate-400">Name</div>
-            <div className="text-slate-100 mb-3">{project.name}</div>
+            <div className="text-sm text-[var(--muted)]">Name</div>
+            <div className="text-[var(--foreground)] mb-3">{project.name}</div>
 
-            <div className="text-sm text-slate-400">Description</div>
-            <div className="text-slate-100 mb-3">
-              {project.description ? project.description : <span className="text-slate-500">—</span>}
+            <div className="text-sm text-[var(--muted)]">Description</div>
+            <div className="text-[var(--foreground)] mb-3">
+              {project.description ? project.description : <span className="text-[var(--muted)]">—</span>}
             </div>
 
-            <div className="text-sm text-slate-400">Created</div>
-            <div className="text-slate-100">{new Date(project.created_at).toLocaleString()}</div>
+            <div className="text-sm text-[var(--muted)]">Created</div>
+            <div className="text-[var(--foreground)]">{new Date(project.created_at).toLocaleString()}</div>
 
             {project.is_owner && (
               <>
-                <div className="text-sm text-slate-400 mt-3">Visibility</div>
+                <div className="text-sm text-[var(--muted)] mt-3">Visibility</div>
                 <select
                   value={project.visibility || "private"}
                   onChange={handleVisibilityChange}
@@ -290,8 +290,8 @@ export default function ProjectDetailsPage() {
             
             {!project.is_owner && (
               <>
-                <div className="text-sm text-slate-400 mt-3">Visibility</div>
-                <div className="text-slate-100 capitalize">{project.visibility || "private"}</div>
+                <div className="text-sm text-[var(--muted)] mt-3">Visibility</div>
+                <div className="text-[var(--foreground)] capitalize">{project.visibility || "private"}</div>
               </>
             )}
           </section>
@@ -299,25 +299,25 @@ export default function ProjectDetailsPage() {
           <section className="card p-4">
             <h2 className="text-lg font-medium mb-3">Stats</h2>
 
-            <div className="flex items-center justify-between py-2 border-b border-slate-800">
-              <div className="text-slate-300">Objects</div>
+            <div className="flex items-center justify-between py-2 border-b border-[var(--border)]">
+              <div className="text-[var(--foreground)]">Objects</div>
               <div className="font-medium">{objects.length}</div>
             </div>
 
-            <div className="flex items-center justify-between py-2 border-b border-slate-800">
-              <div className="text-slate-300">Generated files</div>
+            <div className="flex items-center justify-between py-2 border-b border-[var(--border)]">
+              <div className="text-[var(--foreground)]">Generated files</div>
               <div className="font-medium">{artifacts.length}</div>
             </div>
 
             <div className="mt-4">
-              <div className="text-sm text-slate-400 mb-2">Objects by type</div>
-              {typesSummary.length === 0 && <div className="text-slate-500 text-sm">—</div>}
+              <div className="text-sm text-[var(--muted)] mb-2">Objects by type</div>
+              {typesSummary.length === 0 && <div className="text-[var(--muted)] text-sm">—</div>}
               {typesSummary.length > 0 && (
                 <ul className="space-y-1 text-sm">
                   {typesSummary.map(([t, c]) => (
                     <li key={t} className="flex items-center justify-between">
-                      <span className="text-slate-300">{t}</span>
-                      <span className="text-slate-100">{c}</span>
+                      <span className="text-[var(--foreground)]">{t}</span>
+                      <span className="text-[var(--foreground)]">{c}</span>
                     </li>
                   ))}
                 </ul>
@@ -347,12 +347,12 @@ export default function ProjectDetailsPage() {
            </div>
            
            {collaborators.length === 0 ? (
-             <p className="text-sm text-slate-500">No collaborators.</p>
+             <p className="text-sm text-[var(--muted)]">No collaborators.</p>
            ) : (
              <ul className="space-y-2">
                {collaborators.map(c => (
-                 <li key={c.user_id} className="flex items-center justify-between bg-slate-900 px-3 py-2 rounded">
-                   <div className="text-sm text-slate-300">{c.users?.email || c.user_id}</div>
+                 <li key={c.user_id} className="flex items-center justify-between bg-[var(--card-bg)] px-3 py-2 rounded">
+                   <div className="text-sm text-[var(--foreground)]">{c.users?.email || c.user_id}</div>
                    <button
                      className="text-red-400 text-sm hover:text-red-300"
                      onClick={() => handleRemoveCollaborator(c.user_id)}
@@ -373,10 +373,10 @@ export default function ProjectDetailsPage() {
             <h2 className="text-lg font-medium">Generated files</h2>
             {artifacts.length > 0 && (
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-slate-200">
+                <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-[var(--foreground)]">
                   <input
                     type="checkbox"
-                    className="rounded bg-slate-800 border-slate-700 text-blue-500 focus:ring-blue-500 cursor-pointer"
+                    className="rounded bg-[var(--item-bg-alpha)] border-[var(--border)] text-blue-500 focus:ring-blue-500 cursor-pointer"
                     checked={selectedArtifacts.size === artifacts.length && artifacts.length > 0}
                     onChange={toggleAll}
                   />
@@ -401,21 +401,21 @@ export default function ProjectDetailsPage() {
           </div>
 
           {artifacts.length === 0 ? (
-            <p className="text-slate-500">No generated files.</p>
+            <p className="text-[var(--muted)]">No generated files.</p>
           ) : (
             <ul className="space-y-3">
               {artifacts.map((it) => (
-                <li key={it.id} className="bg-slate-900 rounded px-4 py-3 flex items-center gap-4 hover:bg-slate-800 transition-colors">
+                <li key={it.id} className="bg-[var(--card-bg)] rounded px-4 py-3 flex items-center gap-4 hover:bg-[var(--item-bg-alpha)] transition-colors">
                   <input
                     type="checkbox"
-                    className="rounded bg-slate-700 border-slate-600 text-blue-500 focus:ring-blue-500 cursor-pointer w-4 h-4"
+                    className="rounded bg-[var(--card-bg)] border-[var(--border)] accent-[var(--accent)] text-blue-500 focus:ring-blue-500 cursor-pointer w-4 h-4"
                     checked={selectedArtifacts.has(it.id)}
                     onChange={() => toggleSelection(it.id)}
                   />
                   <div className="flex-1 flex items-center justify-between gap-4 flex-wrap">
                     <div>
                       <div className="font-medium">{it.filename}</div>
-                      <div className="text-xs text-slate-500 mt-1">
+                      <div className="text-xs text-[var(--muted)] mt-1">
                         {(it.kind ?? "artifact")} • {new Date(it.created_at).toLocaleString()}
                       </div>
                     </div>

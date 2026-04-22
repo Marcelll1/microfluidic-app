@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import LogoutButton from "@/components/scene/LogoutButton";
+import ThemeToggle from "@/components/scene/ThemeToggle";
 
 //typ dat ktore cakam z GET /api/auth/me
 type Me = { id: string; email: string; role: "user" | "admin" };
@@ -65,7 +66,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
   //zobrazi loading screen kym sa overuje session
   if (loading) {
     return (
-      <div className="app-shell bg-slate-950 text-slate-100">
+      <div className="app-shell bg-[var(--background)] text-[var(--foreground)]">
         <header className="main-header">
           <h1 className="main-title">Microfluidic Designer</h1>
         </header>
@@ -79,7 +80,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
   const role = me?.role ?? "user";
 
   return (
-    <div className="app-shell bg-slate-950 text-slate-100">
+    <div className="app-shell bg-[var(--background)] text-[var(--foreground)]">
       <header className="main-header">
         <h1 className="main-title">Microfluidic Designer</h1>
 
@@ -131,6 +132,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
         </nav>
 
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           <LogoutButton />
         </div>
       </header>

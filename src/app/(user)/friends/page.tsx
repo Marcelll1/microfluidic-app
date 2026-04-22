@@ -105,8 +105,8 @@ export default function FriendsPage() {
       <h1 className="text-3xl font-bold mb-6">Friends</h1>
 
       {/* Section 1: Search */}
-      <section className="bg-slate-900 p-6 rounded-lg text-slate-100">
-        <h2 className="text-xl font-semibold border-b border-slate-700 pb-2 mb-4">Add a Friend</h2>
+      <section className="bg-[var(--card-bg)] p-6 rounded-lg text-[var(--foreground)]">
+        <h2 className="text-xl font-semibold border-b border-[var(--border)] pb-2 mb-4">Add a Friend</h2>
         <form onSubmit={handleSearch} className="flex gap-2 mb-4">
           <input
             type="text"
@@ -123,7 +123,7 @@ export default function FriendsPage() {
         {searchResults.length > 0 && (
           <div className="space-y-2 max-h-40 overflow-y-auto">
             {searchResults.map((user) => (
-              <div key={user.id} className="flex justify-between items-center bg-slate-800 p-3 rounded">
+              <div key={user.id} className="flex justify-between items-center bg-[var(--item-bg-alpha)] p-3 rounded">
                 <span>{user.email}</span>
                 <button
                   onClick={() => sendRequest(user.id)}
@@ -138,18 +138,18 @@ export default function FriendsPage() {
       </section>
 
       {/* Section 2: Pending incoming requests */}
-      <section className="bg-slate-900 p-6 rounded-lg text-slate-100">
-        <h2 className="text-xl font-semibold border-b border-slate-700 pb-2 mb-4">Pending Requests</h2>
+      <section className="bg-[var(--card-bg)] p-6 rounded-lg text-[var(--foreground)]">
+        <h2 className="text-xl font-semibold border-b border-[var(--border)] pb-2 mb-4">Pending Requests</h2>
         {pendingIncoming.length === 0 && pendingOutgoing.length === 0 && (
-          <p className="text-slate-400">No pending requests.</p>
+          <p className="text-[var(--muted)]">No pending requests.</p>
         )}
 
         {pendingIncoming.length > 0 && (
           <div className="mb-4">
-            <h3 className="font-medium text-slate-300 mb-2">Incoming</h3>
+            <h3 className="font-medium text-[var(--foreground)] mb-2">Incoming</h3>
             <ul className="space-y-2">
               {pendingIncoming.map((req) => (
-                <li key={req.id} className="flex justify-between items-center bg-slate-800 p-3 rounded">
+                <li key={req.id} className="flex justify-between items-center bg-[var(--item-bg-alpha)] p-3 rounded">
                   <span>{req.friend.email}</span>
                   <div className="flex gap-2">
                     <button
@@ -173,10 +173,10 @@ export default function FriendsPage() {
 
         {pendingOutgoing.length > 0 && (
           <div>
-            <h3 className="font-medium text-slate-300 mb-2">Outgoing</h3>
+            <h3 className="font-medium text-[var(--foreground)] mb-2">Outgoing</h3>
             <ul className="space-y-2">
               {pendingOutgoing.map((req) => (
-                <li key={req.id} className="flex justify-between items-center bg-slate-800 p-3 rounded">
+                <li key={req.id} className="flex justify-between items-center bg-[var(--item-bg-alpha)] p-3 rounded">
                   <span>{req.friend.email}</span>
                   <button
                     onClick={() => removeFriend(req.id)}
@@ -192,16 +192,16 @@ export default function FriendsPage() {
       </section>
 
       {/* Section 3: List of accepted friends */}
-      <section className="bg-slate-900 p-6 rounded-lg text-slate-100">
-        <h2 className="text-xl font-semibold border-b border-slate-700 pb-2 mb-4">Your Friends</h2>
+      <section className="bg-[var(--card-bg)] p-6 rounded-lg text-[var(--foreground)]">
+        <h2 className="text-xl font-semibold border-b border-[var(--border)] pb-2 mb-4">Your Friends</h2>
         {loading ? (
-          <p className="text-slate-400">Loading friends...</p>
+          <p className="text-[var(--muted)]">Loading friends...</p>
         ) : acceptedFriends.length === 0 ? (
-          <p className="text-slate-400">You have no friends added yet.</p>
+          <p className="text-[var(--muted)]">You have no friends added yet.</p>
         ) : (
           <ul className="space-y-2">
             {acceptedFriends.map((f) => (
-              <li key={f.id} className="flex justify-between items-center bg-slate-800 p-3 rounded">
+              <li key={f.id} className="flex justify-between items-center bg-[var(--item-bg-alpha)] p-3 rounded">
                 <span>{f.friend.email}</span>
                 <button
                   onClick={() => removeFriend(f.id)}

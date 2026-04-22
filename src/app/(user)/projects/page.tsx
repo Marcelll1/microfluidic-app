@@ -435,13 +435,13 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      <div className="flex gap-4 mb-6 border-b border-slate-800">
+      <div className="flex gap-4 mb-6 border-b border-[var(--border)]">
         <button
           onClick={() => setActiveTab("my-projects")}
           className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
             activeTab === "my-projects"
-              ? "border-blue-500 text-blue-400"
-              : "border-transparent text-slate-400 hover:text-slate-300"
+              ? "border-[var(--accent)] text-[var(--accent)]"
+              : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
           }`}
         >
           My Projects
@@ -450,8 +450,8 @@ export default function ProjectsPage() {
           onClick={() => setActiveTab("shared")}
           className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
             activeTab === "shared"
-              ? "border-blue-500 text-blue-400"
-              : "border-transparent text-slate-400 hover:text-slate-300"
+              ? "border-[var(--accent)] text-[var(--accent)]"
+              : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
           }`}
         >
           Shared & Explore
@@ -460,8 +460,8 @@ export default function ProjectsPage() {
           onClick={() => setActiveTab("templates")}
           className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
             activeTab === "templates"
-              ? "border-blue-500 text-blue-400"
-              : "border-transparent text-slate-400 hover:text-slate-300"
+              ? "border-[var(--accent)] text-[var(--accent)]"
+              : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
           }`}
         >
           Templates
@@ -498,18 +498,18 @@ export default function ProjectsPage() {
             <h2 className="text-lg font-medium mb-4">
               {me?.role === "admin" ? "All projects" : "Your projects"}
             </h2>
-            {loading && <p className="text-slate-400">Loading projects…</p>}
-            {!loading && projects.length === 0 && <p className="text-slate-400">No projects yet.</p>}
+            {loading && <p className="text-[var(--muted)]">Loading projects…</p>}
+            {!loading && projects.length === 0 && <p className="text-[var(--muted)]">No projects yet.</p>}
             {!loading && projects.length > 0 && (
               <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {projects.map((p) => (
                   <li
                     key={p.id}
-                    className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 group"
+                    className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 group"
                   >
                     {/* Thumbnail section */}
                     <div
-                      className="w-full h-40 bg-slate-950 relative border-b border-slate-800 flex items-center justify-center cursor-pointer group-hover:opacity-90 transition-opacity"
+                      className="w-full h-40 bg-[var(--background)] relative border-b border-[var(--border)] flex items-center justify-center cursor-pointer group-hover:opacity-90 transition-opacity"
                       onClick={() => openProject(p.id)}
                     >
                       {p.thumbnail ? (
@@ -519,12 +519,12 @@ export default function ProjectsPage() {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="text-slate-700 text-sm font-medium">No thumbnail</div>
+                        <div className="text-[var(--muted)] text-sm font-medium">No thumbnail</div>
                       )}
                       <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={(e) => { e.stopPropagation(); renameProject(p); }}
-                          className="bg-slate-800/80 hover:bg-slate-700/80 text-white rounded p-1.5 backdrop-blur-sm"
+                          className="bg-[var(--item-bg-alpha)]/80 hover:bg-[var(--border)]/80 text-white rounded p-1.5 backdrop-blur-sm"
                           title="Rename"
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -552,19 +552,19 @@ export default function ProjectsPage() {
                           {p.name}
                         </div>
                         {p.description && (
-                          <div className="text-sm text-slate-400 mt-1 line-clamp-2">{p.description}</div>
+                          <div className="text-sm text-[var(--muted)] mt-1 line-clamp-2">{p.description}</div>
                         )}
                         {p.owner_email && (
-                          <div className="text-xs text-slate-500 mt-3 flex items-center gap-1.5">
+                          <div className="text-xs text-[var(--muted)] mt-3 flex items-center gap-1.5">
                             <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
                             <span className="font-mono truncate">{p.owner_email}</span>
                           </div>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 pt-4 border-t border-slate-800/50 flex-wrap">
+                      <div className="flex items-center gap-2 pt-4 border-t border-[var(--border)]/50 flex-wrap">
                         <a
-                          className="text-xs py-1.5 px-3 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors"
+                          className="text-xs py-1.5 px-3 bg-[var(--item-bg-alpha)] hover:bg-[var(--border)] rounded-md transition-colors"
                           href={`/projects/${p.id}/details`}
                         >
                           Details
@@ -577,7 +577,7 @@ export default function ProjectsPage() {
                         </button>
                         <button
                           onClick={() => void exportVTK(p.id)}
-                          className="text-xs py-1.5 px-3 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors"
+                          className="text-xs py-1.5 px-3 bg-[var(--item-bg-alpha)] hover:bg-[var(--border)] rounded-md transition-colors"
                         >
                           VTK
                         </button>
@@ -607,18 +607,18 @@ export default function ProjectsPage() {
       {activeTab === "shared" && (
         <section className="card">
           <h2 className="text-lg font-medium mb-4">Shared & Explore</h2>
-          {sharedLoading && <p className="text-slate-400">Loading projects…</p>}
-          {!sharedLoading && sharedProjects.length === 0 && <p className="text-slate-400">No shared or public projects found.</p>}
+          {sharedLoading && <p className="text-[var(--muted)]">Loading projects…</p>}
+          {!sharedLoading && sharedProjects.length === 0 && <p className="text-[var(--muted)]">No shared or public projects found.</p>}
           {!sharedLoading && sharedProjects.length > 0 && (
             <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {sharedProjects.map((p) => (
                 <li
                   key={p.id}
-                  className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 group"
+                  className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 group"
                 >
                   {/* Thumbnail section */}
                   <div
-                    className="w-full h-40 bg-slate-950 relative border-b border-slate-800 flex items-center justify-center cursor-pointer group-hover:opacity-90 transition-opacity"
+                    className="w-full h-40 bg-[var(--background)] relative border-b border-[var(--border)] flex items-center justify-center cursor-pointer group-hover:opacity-90 transition-opacity"
                     onClick={() => openProject(p.id)}
                   >
                     {p.thumbnail ? (
@@ -628,7 +628,7 @@ export default function ProjectsPage() {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="text-slate-700 text-sm font-medium">No thumbnail</div>
+                      <div className="text-[var(--muted)] text-sm font-medium">No thumbnail</div>
                     )}
                   </div>
 
@@ -646,19 +646,19 @@ export default function ProjectsPage() {
                         )}
                       </div>
                       {p.description && (
-                        <div className="text-sm text-slate-400 mt-1 line-clamp-2">{p.description}</div>
+                        <div className="text-sm text-[var(--muted)] mt-1 line-clamp-2">{p.description}</div>
                       )}
                       {p.owner_email && (
-                        <div className="text-xs text-slate-500 mt-3 flex items-center gap-1.5">
+                        <div className="text-xs text-[var(--muted)] mt-3 flex items-center gap-1.5">
                           <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
                           <span className="font-mono truncate">{p.owner_email}</span>
                         </div>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 pt-4 border-t border-slate-800/50 flex-wrap">
+                    <div className="flex items-center gap-2 pt-4 border-t border-[var(--border)]/50 flex-wrap">
                       <a
-                        className="text-xs py-1.5 px-3 bg-slate-800 hover:bg-slate-700 rounded-md transition-colors"
+                        className="text-xs py-1.5 px-3 bg-[var(--item-bg-alpha)] hover:bg-[var(--border)] rounded-md transition-colors"
                         href={`/projects/${p.id}/details`}
                       >
                         Details
@@ -712,23 +712,23 @@ export default function ProjectsPage() {
 
           <section className="card">
             <h2 className="text-lg font-medium mb-4">Project Templates</h2>
-            {templatesLoading && <p className="text-slate-400">Loading templates…</p>}
-            {!templatesLoading && templates.length === 0 && <p className="text-slate-400">No templates found.</p>}
+            {templatesLoading && <p className="text-[var(--muted)]">Loading templates…</p>}
+            {!templatesLoading && templates.length === 0 && <p className="text-[var(--muted)]">No templates found.</p>}
             {!templatesLoading && templates.length > 0 && (
               <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {templates.map((p) => (
                   <li
                     key={p.id}
-                    className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 group"
+                    className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow duration-200 group"
                   >
                     <div
-                      className="w-full h-40 bg-slate-950 relative border-b border-slate-800 flex items-center justify-center cursor-pointer group-hover:opacity-90 transition-opacity"
+                      className="w-full h-40 bg-[var(--background)] relative border-b border-[var(--border)] flex items-center justify-center cursor-pointer group-hover:opacity-90 transition-opacity"
                       onClick={() => openProject(p.id)}
                     >
                       {p.thumbnail ? (
                         <img src={p.thumbnail} alt={p.name} className="w-full h-full object-cover" />
                       ) : (
-                        <div className="text-slate-700 text-sm font-medium">No thumbnail</div>
+                        <div className="text-[var(--muted)] text-sm font-medium">No thumbnail</div>
                       )}
                     </div>
 
@@ -741,17 +741,17 @@ export default function ProjectsPage() {
                           {p.name}
                         </div>
                         {p.description && (
-                          <div className="text-sm text-slate-400 mt-1 line-clamp-2">{p.description}</div>
+                          <div className="text-sm text-[var(--muted)] mt-1 line-clamp-2">{p.description}</div>
                         )}
                         {p.owner_email && (
-                          <div className="text-xs text-slate-500 mt-3 flex items-center gap-1.5">
+                          <div className="text-xs text-[var(--muted)] mt-3 flex items-center gap-1.5">
                             <span className="inline-block w-2 h-2 rounded-full bg-indigo-500"></span>
                             <span className="font-mono truncate">{p.owner_email}</span>
                           </div>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 pt-4 border-t border-slate-800/50 flex-wrap">
+                      <div className="flex items-center gap-2 pt-4 border-t border-[var(--border)]/50 flex-wrap">
                         <button
                           onClick={() => cloneProject(p.id)}
                           className="text-xs py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors"

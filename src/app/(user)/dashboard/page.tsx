@@ -214,29 +214,29 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {loading && <p className="text-slate-400">Loading…</p>}
-        {!loading && !lastProject && <p className="text-slate-400">No projects found.</p>}
+        {loading && <p className="text-[var(--muted)]">Loading…</p>}
+        {!loading && !lastProject && <p className="text-[var(--muted)]">No projects found.</p>}
 
         {!loading && lastProject && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="col-span-1">
-              <div className="bg-slate-900 rounded-lg p-4 border border-slate-800">
+              <div className="bg-[var(--card-bg)] rounded-lg p-4 border border-[var(--border)]">
                 {lastProject.thumbnail ? (
                   <img
                     src={lastProject.thumbnail}
                     alt={lastProject.name}
-                    className="w-full h-auto aspect-video object-cover rounded mb-4 bg-slate-800"
+                    className="w-full h-auto aspect-video object-cover rounded mb-4 bg-[var(--item-bg-alpha)]"
                   />
                 ) : (
-                  <div className="w-full aspect-video rounded mb-4 bg-slate-800 flex items-center justify-center text-slate-500">
+                  <div className="w-full aspect-video rounded mb-4 bg-[var(--item-bg-alpha)] flex items-center justify-center text-[var(--muted)]">
                     No Thumbnail
                   </div>
                 )}
                 <h3 className="font-medium text-lg mb-1">{lastProject.name}</h3>
-                <p className="text-sm text-slate-400 mb-3 block">
-                  {lastProject.description || <span className="text-slate-500">—</span>}
+                <p className="text-sm text-[var(--muted)] mb-3 block">
+                  {lastProject.description || <span className="text-[var(--muted)]">—</span>}
                 </p>
-                <div className="text-xs text-slate-500 mb-5">
+                <div className="text-xs text-[var(--muted)] mb-5">
                   Created: {new Date(lastProject.created_at).toLocaleString()}
                 </div>
                 <div className="flex gap-2 flex-wrap">
@@ -252,13 +252,13 @@ export default function DashboardPage() {
 
             <div className="col-span-1 md:col-span-2">
               <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
-                <h3 className="font-medium text-slate-200">Generated files</h3>
+                <h3 className="font-medium text-[var(--foreground)]">Generated files</h3>
                 {artifacts.length > 0 && (
                   <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-slate-200">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-[var(--foreground)]">
                       <input
                         type="checkbox"
-                        className="rounded bg-slate-800 border-slate-700 text-blue-500 focus:ring-blue-500 cursor-pointer"
+                        className="rounded bg-[var(--item-bg-alpha)] border-[var(--border)] text-blue-500 focus:ring-blue-500 cursor-pointer"
                         checked={selectedArtifacts.size === artifacts.length && artifacts.length > 0}
                         onChange={toggleAll}
                       />
@@ -283,24 +283,24 @@ export default function DashboardPage() {
               </div>
 
               {artifacts.length === 0 ? (
-                <p className="text-slate-500 text-sm">No generated files for this project.</p>
+                <p className="text-[var(--muted)] text-sm">No generated files for this project.</p>
               ) : (
                 <ul className="space-y-3">
                   {artifacts.map((it) => (
                     <li
                       key={it.id}
-                      className="bg-slate-900 rounded px-4 py-3 flex items-center gap-4 border border-slate-800 hover:border-slate-700 transition-colors"
+                      className="bg-[var(--card-bg)] rounded px-4 py-3 flex items-center gap-4 border border-[var(--border)] hover:border-[var(--border)] transition-colors"
                     >
                       <input
                         type="checkbox"
-                        className="rounded bg-slate-700 border-slate-600 text-blue-500 focus:ring-blue-500 cursor-pointer w-4 h-4"
+                        className="rounded bg-[var(--card-bg)] border-[var(--border)] accent-[var(--accent)] text-blue-500 focus:ring-blue-500 cursor-pointer w-4 h-4"
                         checked={selectedArtifacts.has(it.id)}
                         onChange={() => toggleSelection(it.id)}
                       />
                       <div className="flex-1 flex items-center justify-between gap-4 flex-wrap">
                         <div>
                           <div className="font-medium">{it.filename}</div>
-                          <div className="text-xs text-slate-500 mt-1">
+                          <div className="text-xs text-[var(--muted)] mt-1">
                             {it.kind} • {new Date(it.created_at).toLocaleString()}
                           </div>
                         </div>

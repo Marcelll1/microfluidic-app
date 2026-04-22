@@ -6,7 +6,7 @@ export default function PublicLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="app-shell bg-slate-950 text-slate-100">
+    <div className="app-shell bg-[var(--background)] text-[var(--foreground)]">
       <header className="main-header">
         <h1 className="main-title">Microfluidic Designer</h1>
 

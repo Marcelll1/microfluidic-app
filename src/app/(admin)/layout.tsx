@@ -10,7 +10,7 @@ export default async function AdminGroupLayout({ children }: { children: React.R
   if (auth.user.role !== "admin") redirect("/projects"); //ak nie je admin, presmeruje na user projekty
 
   return (
-    <div className="app-shell bg-slate-950 text-slate-100">
+    <div className="app-shell bg-[var(--background)] text-[var(--foreground)]">
       <header className="main-header">
         <h1 className="main-title">Microfluidic Designer (Admin)</h1>
 

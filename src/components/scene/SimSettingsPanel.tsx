@@ -50,14 +50,14 @@ export default function SimSettingsPanel({ projectId }: { projectId: string | nu
     <div className="absolute top-4 right-20 z-50">
       <button 
         onClick={() => setOpen(!open)}
-        className="bg-slate-800 text-white px-3 py-1.5 rounded border border-slate-700 hover:bg-slate-700 text-sm"
+        className="bg-[var(--card-bg)] text-[var(--foreground)] px-3 py-1.5 rounded border border-[var(--border)] hover:bg-[var(--border)] text-sm"
       >
         ⚙️ Physics Params
       </button>
 
       {open && (
-        <div className="mt-2 bg-slate-900 border border-slate-700 rounded p-4 shadow-xl w-64 text-sm text-slate-300 pointer-events-auto">
-          <label className="flex items-center space-x-2 text-white font-semibold mb-4">
+        <div className="mt-2 bg-[var(--card-bg)] border border-[var(--border)] rounded p-4 shadow-xl w-64 text-sm text-[var(--foreground)] opacity-90 pointer-events-auto">
+          <label className="flex items-center space-x-2 text-[var(--foreground)] font-semibold mb-4">
             <input 
               type="checkbox" 
               checked={enabled} 
@@ -79,15 +79,15 @@ export default function SimSettingsPanel({ projectId }: { projectId: string | nu
                     step="any"
                     value={(settings as any)[key]}
                     onChange={e => setSettings({ ...settings, [key]: parseFloat(e.target.value) || 0 })}
-                    className="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1 outline-none focus:border-sky-500"
+                    className="w-20 bg-[var(--card-bg)] border border-[var(--border)] rounded px-2 py-1 outline-none focus:border-sky-500"
                   />
                 </div>
               ))}
             </div>
           )}
 
-          <div className="mt-4 pt-4 border-t border-slate-800 flex justify-end">
-             <button disabled={saving} onClick={handleApply} className="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1 rounded">
+          <div className="mt-4 pt-4 border-t border-[var(--border)] flex justify-end">
+             <button disabled={saving} onClick={handleApply} className="bg-sky-600 hover:bg-sky-500 text-[var(--foreground)] px-3 py-1 rounded">
                {saving ? "Saving..." : "Save"}
              </button>
           </div>

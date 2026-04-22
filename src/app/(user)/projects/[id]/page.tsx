@@ -16,7 +16,7 @@ export default function ProjectIdPage({ params }: { params: Promise<{ id: string
 
   return (
     <main className="page p-6 max-w-3xl mx-auto">
-      <p className="text-slate-400">Opening editor…</p>
+      <p className="text-[var(--muted)]">Opening editor…</p>
     </main>
   );
 }

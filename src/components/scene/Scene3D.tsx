@@ -10,6 +10,7 @@ import DragMenu from "./DragMenu";
 import ObjectPanel from "./ObjectPanel";
 import SceneGraph from "./SceneGraph";
 import SimSettingsPanel from "./SimSettingsPanel";
+import { useTheme } from "@/lib/ThemeContext";
 
 type ObjectType = "cube" | "cylinder" | "rbc" | "group" | "merged" | "__lb_settings__";
 
@@ -143,6 +144,8 @@ function buildBevelGeometry(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Scene3D({ projectId }: { projectId: string | null }) {
+  const { theme } = useTheme();
+  
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -231,6 +234,22 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
   useEffect(() => {
     validateScene();
   }, [objects, transform, validateScene, multiSelect, simSize]);
+
+  // Theme update effect for background and grid
+  useEffect(() => {
+    if (sceneRef.current) {
+      sceneRef.current.background = new THREE.Color(theme === "light" ? 0xf8fafc : 0x0a0c10);
+      
+      // Update grid helper colors if needed
+      sceneRef.current.children.forEach((child) => {
+        if (child instanceof THREE.GridHelper) {
+          const gridColor = theme === "light" ? 0xcccccc : 0x444444;
+          // GridHelper uses properties colors but we might need to recreate it if colors can't be updated simply.
+          // However for immediate effect we just recreate GridHelper inside init
+        }
+      });
+    }
+  }, [theme]);
 
 
   // --- API FUNKCIE (ZACHOVANÉ) ---
@@ -327,6 +346,16 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       for (let i = 1; i < parts.length; i++) result = CSG.union(result, buildPartMesh(parts[i]));
       result.position.set(row.pos_x, row.pos_y, row.pos_z);
       result.userData = { interactable: true, type: "merged", params: row.params || {}, dbId: row.id, name: p.name || "Zlúčený objekt", clipHeight: 0, clipAngle: 0 };
+      result.material = new THREE.MeshStandardMaterial({
+        color: p.color ? new THREE.Color(p.color) : 0x886622,
+        clippingPlanes: []
+      });
+      const edgeGeo = new THREE.EdgesGeometry(result.geometry);
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
+      const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+      edgeMesh.name = "__edge_highlight__";
+      result.add(edgeMesh);
+
       return result;
     }
 
@@ -342,7 +371,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     }
 
     const material = new THREE.MeshStandardMaterial({ 
-      color: row.type === "cube" ? 0x00aaff : 0xffaa00,
+      color: p.color ? new THREE.Color(p.color) : (row.type === "cube" ? 0x00aaff : 0xffaa00),
       clippingPlanes: []
     });
 
@@ -365,6 +394,12 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     // Obnov zrezanie zo uložených parametrov
     if (p.clipHeight || p.clipAngle) {
     }
+
+    const edgeGeo = new THREE.EdgesGeometry(mesh.geometry);
+    const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
+    const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+    edgeMesh.name = "__edge_highlight__";
+    mesh.add(edgeMesh);
 
     return mesh;
   }, []);
@@ -419,10 +454,11 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     const group = new THREE.Group();
     group.name = "lbSystem";
 
-    // 1. Podlaha (GridHelper) – počet delení podľa hustoty
-    const lbSpacing = lbDensity > 0 ? 1 / lbDensity : 1; // prevod hustota → vzdialenosť
+    // 1. Podlaha (GridHelper)
+    const lbSpacing = lbDensity > 0 ? 1 / lbDensity : 1; 
     const gridDivs = Math.max(1, Math.round(Math.max(simSize.x, simSize.z) * lbDensity));
-    const gridHelper = new THREE.GridHelper(Math.max(simSize.x, simSize.z), gridDivs, lbColor, "#222233");
+    const gridGridColor = theme === "light" ? "#cbd5e1" : "#222233";
+    const gridHelper = new THREE.GridHelper(Math.max(simSize.x, simSize.z), gridDivs, lbColor, gridGridColor);
     gridHelper.position.set(simSize.x / 2, 0, simSize.z / 2);
     group.add(gridHelper);
 
@@ -450,7 +486,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     group.add(latticePoints);
 
     scene.add(group);
-  }, [simSize, showLB, lbColor, lbDensity]);
+  }, [simSize, showLB, lbColor, lbDensity, theme]);
 
   // --- THREE.JS INITIALIZATION ---
   useEffect(() => {
@@ -458,7 +494,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     const mount = mountRef.current;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0c10);
+    scene.background = new THREE.Color(theme === "light" ? 0xf8fafc : 0x0a0c10);
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 1000);
@@ -1110,6 +1146,18 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [deleteSelected, copySelected, pasteObject]);
 
+  const updateColorPanel = (colorValue: string) => {
+    if (!selectedMeshRef.current) return;
+    const mesh = selectedMeshRef.current;
+    mesh.traverse((m) => {
+      if (m instanceof THREE.Mesh && m.material && m.name !== "__edge_highlight__" && "color" in m.material) {
+        (m.material as THREE.MeshStandardMaterial).color.set(colorValue);
+      }
+    });
+    mesh.userData.params = { ...mesh.userData.params, color: colorValue };
+    patchSelectedDebounced({ params: mesh.userData.params });
+  };
+
   const updateTransformPanel = (field: string, value: number) => {
     if (!selectedMeshRef.current) return;
     const mesh = selectedMeshRef.current;
@@ -1204,38 +1252,38 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
   };
 
   return (
-    <div className="relative flex h-full w-full bg-black">
+    <div className="relative flex h-full w-full bg-[var(--background)]">
       <SimSettingsPanel projectId={projectId} />
       {/* Horný Panel LB Siete */}
       <div className="absolute top-4 left-[396px] right-[280px] z-30 flex justify-center pointer-events-none">
-        <div className="flex items-center flex-wrap justify-center gap-4 xl:gap-6 bg-slate-900/90 px-4 py-3 xl:px-6 rounded-2xl shadow-xl border border-slate-700 pointer-events-auto max-w-full">
+        <div className="flex items-center flex-wrap justify-center gap-4 xl:gap-6 bg-[var(--card-bg)]/90 px-4 py-3 xl:px-6 rounded-2xl shadow-xl border border-[var(--border)] pointer-events-auto max-w-full">
           <div className="flex flex-col">
-          <label className="text-[10px] text-sky-400 font-bold uppercase mb-1">Veľkosť simulácie (LB Sieť)</label>
+          <label className="text-[10px] text-[var(--accent)] font-bold uppercase mb-1">Veľkosť simulácie (LB Sieť)</label>
           <div className="flex gap-2">
-            <input type="number" value={simSize.x} onChange={e => setSimSize({...simSize, x: +e.target.value})} className="w-14 bg-black border border-slate-600 rounded p-1 text-white text-xs" />
-            <input type="number" value={simSize.y} onChange={e => setSimSize({...simSize, y: +e.target.value})} className="w-14 bg-black border border-slate-600 rounded p-1 text-white text-xs" />
-            <input type="number" value={simSize.z} onChange={e => setSimSize({...simSize, z: +e.target.value})} className="w-14 bg-black border border-slate-600 rounded p-1 text-white text-xs" />
+            <input type="number" value={simSize.x} onChange={e => setSimSize({...simSize, x: +e.target.value})} className="w-14 bg-[var(--background)] border border-[var(--border)] rounded p-1 text-[var(--foreground)] text-xs" />
+            <input type="number" value={simSize.y} onChange={e => setSimSize({...simSize, y: +e.target.value})} className="w-14 bg-[var(--background)] border border-[var(--border)] rounded p-1 text-[var(--foreground)] text-xs" />
+            <input type="number" value={simSize.z} onChange={e => setSimSize({...simSize, z: +e.target.value})} className="w-14 bg-[var(--background)] border border-[var(--border)] rounded p-1 text-[var(--foreground)] text-xs" />
           </div>
         </div>
-        <div className="w-px h-8 bg-slate-700"></div>
+        <div className="w-px h-8 bg-[var(--border)]"></div>
         <div className="flex items-center gap-3">
           <input type="color" value={lbColor} onChange={e => setLbColor(e.target.value)} className="w-6 h-6 cursor-pointer bg-transparent" />
-          <label className="text-xs text-white flex items-center gap-2 cursor-pointer">
+          <label className="text-xs text-[var(--foreground)] flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={showLB} onChange={e => setShowLB(e.target.checked)} className="accent-sky-500" />
             Zobraziť sieť
           </label>
         </div>
-        <div className="w-px h-8 bg-slate-700"></div>
+        <div className="w-px h-8 bg-[var(--border)]"></div>
         <div className="flex flex-col">
-          <label className="text-[10px] text-sky-400 font-bold uppercase mb-1">Hustota LB (b/j)</label>
+          <label className="text-[10px] text-[var(--accent)] font-bold uppercase mb-1">Hustota LB (b/j)</label>
           <input
             type="number" min="0.1" step="0.1"
             value={lbDensity}
             onChange={e => setLbDensity(Math.max(0.1, +e.target.value))}
-            className="w-16 bg-black border border-slate-600 rounded p-1 text-white text-xs text-center"
+            className="w-16 bg-[var(--background)] border border-[var(--border)] rounded p-1 text-[var(--foreground)] text-xs text-center"
           />
         </div>
-        <div className="w-px h-8 bg-slate-700"></div>
+        <div className="w-px h-8 bg-[var(--border)]"></div>
         {/* Export STL pre ParaView */}
         <button
           onClick={() => exportSTL()}
@@ -1253,7 +1301,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
           Kontrola tvarov a medzier
         </button>
 
-        <div className="w-px h-8 bg-slate-700"></div>
+        <div className="w-px h-8 bg-[var(--border)]"></div>
         {/* Save Scene */}
         <button
           onClick={() => void saveScene()}
@@ -1261,7 +1309,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
           className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition border
             ${saveStatus === "saved" ? "bg-emerald-700 border-emerald-500 text-white" :
               saveStatus === "error" ? "bg-red-800 border-red-500 text-white" :
-              saveStatus === "saving" ? "bg-slate-700 border-slate-500 text-slate-400 cursor-not-allowed" :
+              saveStatus === "saving" ? "bg-[var(--border)] border-slate-500 text-slate-400 cursor-not-allowed" :
               "bg-sky-800 hover:bg-sky-600 border-sky-600 text-white"}`}
         >
           {saveStatus === "saving" ? "Ukladám..." :
@@ -1304,17 +1352,17 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
       {/* Multi-výber – lišta Zlúčiť */}
       {multiSelect.length >= 2 && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-slate-900/95 border border-emerald-600 rounded-xl px-5 py-2.5 shadow-2xl">
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-[var(--card-bg)]/95 border border-emerald-600 rounded-xl px-5 py-2.5 shadow-2xl">
           <span className="text-xs text-emerald-300 font-bold">{multiSelect.length} objekty vybrané</span>
           <button
             onClick={() => void mergeSelected()}
-            className="bg-emerald-700 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded transition"
+            className="bg-emerald-700 hover:bg-emerald-500 text-[var(--foreground)] text-xs font-bold px-3 py-1.5 rounded transition"
           >
             ⊕ Zlúčiť do 1 tvaru
           </button>
           <button
             onClick={() => { multiSelectRef.current = []; setMultiSelect([]); }}
-            className="bg-slate-700 hover:bg-slate-500 text-slate-300 text-xs px-2.5 py-1.5 rounded transition"
+            className="bg-[var(--border)] hover:bg-[var(--card-bg)] text-[var(--foreground)] text-xs px-2.5 py-1.5 rounded transition"
           >
             Zrušiť
           </button>
@@ -1332,6 +1380,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
           simSize={simSize}
           sceneParams={sceneParams}
           onUpdate={updateTransformPanel}
+          onColorUpdate={updateColorPanel}
           onDimUpdate={updateDimensions}
           onClip={updateClipping}
           onBevel={updateBevel}
