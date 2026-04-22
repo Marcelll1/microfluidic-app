@@ -378,5 +378,9 @@ function handleCube(namePrefix: string, ox: number, oy: number, oz: number, w: n
   lines.push("vtk_file = 'boundaries_grid_output.vtk'");
   lines.push("lbf.print_vtk_boundary(vtk_file)");
   lines.push("");
+  lines.push("print(f'\\n[Microfluidic Designer] Úspech: Zostavené a pridané do ESPResSo.')");
+  lines.push("print(f'[Microfluidic Designer] Celkový počet vložených tvarov (boundaries): {len(boundaries)}')");
+  lines.push("print(f'[Microfluidic Designer] Mriežka exportovaná do súboru: {vtk_file}\\n')");
+  lines.push("");
   return lines.join("\n"); 
 }
