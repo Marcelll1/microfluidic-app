@@ -159,6 +159,13 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
   // LB Sieť parametre
   const [simSize, setSimSize] = useState({ x: 10, y: 10, z: 10 });
   const [showLB, setShowLB] = useState(true);
+  const [showEdges, setShowEdges] = useState(true); 
+  const showEdgesRef = useRef(true);
+  useEffect(() => {
+    showEdgesRef.current = showEdges;
+  }, [showEdges]);
+
+
   const [lbColor, setLbColor] = useState("#4466aa");
   const [lbDensity, setLbDensity] = useState(1); // body na jednotku dĺžky (1/spacing)
 
@@ -350,10 +357,11 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
         color: p.color ? new THREE.Color(p.color) : 0x886622,
         clippingPlanes: []
       });
-      const edgeGeo = new THREE.EdgesGeometry(result.geometry);
+      const edgeGeo = new THREE.EdgesGeometry(result.geometry, 15);
       const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
       const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
       edgeMesh.name = "__edge_highlight__";
+      edgeMesh.visible = showEdgesRef.current;
       result.add(edgeMesh);
 
       return result;
@@ -395,10 +403,11 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     if (p.clipHeight || p.clipAngle) {
     }
 
-    const edgeGeo = new THREE.EdgesGeometry(mesh.geometry);
+    const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 15);
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
     const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
     edgeMesh.name = "__edge_highlight__";
+      edgeMesh.visible = showEdgesRef.current;
     mesh.add(edgeMesh);
 
     return mesh;
@@ -464,7 +473,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
     // 2. Ohraničenie oblasti (Bounding Box)
     const boxGeo = new THREE.BoxGeometry(simSize.x, simSize.y, simSize.z);
-    const edges = new THREE.EdgesGeometry(boxGeo);
+    const edges = new THREE.EdgesGeometry(boxGeo, 15);
     const boxLines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: lbColor, opacity: 0.5, transparent: true }));
     boxLines.position.set(simSize.x / 2, simSize.y / 2, simSize.z / 2);
     group.add(boxLines);
@@ -487,6 +496,18 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
 
     scene.add(group);
   }, [simSize, showLB, lbColor, lbDensity, theme]);
+
+  useEffect(() => {
+    if (sceneRef.current) {
+      sceneRef.current.children.forEach(child => {
+        if (child.userData?.interactable) {
+          child.traverse(c => {
+            if (c.name === "__edge_highlight__") c.visible = showEdges;
+          });
+        }
+      });
+    }
+  }, [showEdges]);
 
   // --- THREE.JS INITIALIZATION ---
   useEffect(() => {
@@ -742,6 +763,14 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     mesh.position.copy(point);
 
     mesh.userData = { interactable: true, type: dragType, params, dbId: undefined, name: params.name, clipHeight: 0, clipAngle: 0, bevelRadius: 0 };
+    const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 15);
+    const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
+    const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+    edgeMesh.name = "__edge_highlight__";
+      edgeMesh.visible = showEdgesRef.current;
+    edgeMesh.visible = showEdgesRef.current;
+    mesh.add(edgeMesh);
+
     sceneRef.current.add(mesh);
     syncObjectsList();
 
@@ -1152,6 +1181,7 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     mesh.traverse((m) => {
       if (m instanceof THREE.Mesh && m.material && m.name !== "__edge_highlight__" && "color" in m.material) {
         (m.material as THREE.MeshStandardMaterial).color.set(colorValue);
+        m.userData.originalColor = (m.material as THREE.MeshStandardMaterial).color.getHex();
       }
     });
     mesh.userData.params = { ...mesh.userData.params, color: colorValue };
@@ -1190,6 +1220,19 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
   };
 
   // Aktualizácia rozmerov (width/height/depth/radius) vybraného objektu
+  const refreshEdgeHighlight = (mesh: THREE.Mesh) => {
+    const oldEdge = mesh.getObjectByName("__edge_highlight__") as THREE.LineSegments | undefined;
+    if (oldEdge && oldEdge.geometry) oldEdge.geometry.dispose();
+    if (oldEdge) mesh.remove(oldEdge);
+    const edgeGeo = new THREE.EdgesGeometry(mesh.geometry, 15);
+    const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
+    const edgeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+    edgeMesh.name = "__edge_highlight__";
+      edgeMesh.visible = showEdgesRef.current;
+    edgeMesh.visible = showEdgesRef.current;
+    mesh.add(edgeMesh);
+  };
+
   const updateDimensions = useCallback((updatedParams: Record<string, number>) => {
     const mesh = selectedMeshRef.current;
     if (!mesh) return;
@@ -1202,12 +1245,16 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
       const edges = bevelEdges ? new Set<string>(bevelEdges as string[]) : edgeGroupToSet(bevelGroup as EdgeGroup);
       mesh.geometry.dispose();
       mesh.geometry = buildBevelGeometryEdges(width, height, depth, bevelRadius, edges, !!newParams.isChamfer);
+      refreshEdgeHighlight(mesh as THREE.Mesh);
+
       if (newParams.clipHeight || newParams.clipAngle) {
       }
     } else if (type === "cylinder" && mesh instanceof THREE.Mesh) {
       const { radiusTop = 0.5, radiusBottom = 0.5, height = 1 } = newParams;
       mesh.geometry.dispose();
       mesh.geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 32);
+      refreshEdgeHighlight(mesh as THREE.Mesh);
+
       if (newParams.clipHeight || newParams.clipAngle) {
       }
     }
@@ -1241,6 +1288,8 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
     if (mesh.geometry) mesh.geometry.dispose();
     mesh.geometry = buildBevelGeometryEdges(w, h, d, radius, edges, isChamfer);
 
+    refreshEdgeHighlight(mesh as THREE.Mesh);
+
     mesh.userData.bevelRadius = radius;
     mesh.userData.bevelEdges = Array.from(edges);
     mesh.userData.params = { ...mesh.userData.params, bevelRadius: radius, bevelEdges: Array.from(edges), isChamfer: isChamfer };
@@ -1271,6 +1320,11 @@ export default function Scene3D({ projectId }: { projectId: string | null }) {
           <label className="text-xs text-[var(--foreground)] flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={showLB} onChange={e => setShowLB(e.target.checked)} className="accent-sky-500" />
             Zobraziť sieť
+          </label>
+          <label className="text-xs text-[var(--foreground)] flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={showEdges} onChange={e => setShowEdges(e.target.checked)} className="accent-[var(--accent)]" />
+            Zobraziť hrany
+
           </label>
         </div>
         <div className="w-px h-8 bg-[var(--border)]"></div>
