@@ -248,19 +248,33 @@ The thesis also contains quantitative performance evaluation of the application 
 
 ## Screenshots
 
-Add screenshots of the application here.
-
 ### 3D Editor
 
-![3D Editor](screenshots/editor.png)
+The main workspace provides an interactive 3D environment for designing
+and manipulating microfluidic geometries.
 
-### Object Manipulation
+![3D Editor](screenshots/3d-editor.png)
 
-![Object Manipulation](screenshots/object-manipulation.png)
+### Parametric Object Editing
 
-### Generated Python Code
+Objects can be precisely configured using numerical position, dimension,
+rotation and geometry parameters.
 
-![Generated Python Code](screenshots/generated-code.png)
+![Object Editor](screenshots/object-editor.png)
+
+### Cell Models
+
+The application supports importing and manipulating 3D cell models
+within the simulation environment.
+
+![Cell Models](screenshots/cell-models.png)
+
+### From 3D Design to Simulation
+
+The designed geometry can be converted into simulation code and processed
+by ESPResSoMD. The resulting model can then be visualized in ParaView.
+
+![Simulation Result](screenshots/simulation-result.png)
 
 ## Bachelor's Thesis
 
