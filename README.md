@@ -1,176 +1,335 @@
-# Microfluidic Design Application (VAII)
+# Microfluidic 3D Designer
 
-Semestrálna práca z predmetu **VAII**.  
-Aplikácia na správu projektov a 3D editor (Three.js) pre návrh objektov v projekte, s generovaním výstupných súborov.
+An interactive 3D web application for designing microfluidic channel models and generating simulation-ready Python code.
 
----
+The application was developed as a Bachelor's thesis at the **University of Žilina, Faculty of Management Science and Informatics**. Its primary goal is to simplify the preparation of microfluidic models for the **ESPResSoMD** simulation environment with the **PyOIF** module.
 
-## 1) Technológie
+Instead of manually defining geometric parameters and coordinates directly in simulation source code, users can construct the model visually in an interactive 3D environment and automatically generate the corresponding Python simulation code.
 
-- **Frontend/Backend:** Next.js (React, TypeScript) – App Router
-- **DB:** PostgreSQL (Supabase)
-- **3D editor:** Three.js
-- **Štýlovanie:** Tailwind + vlastné CSS
+## Overview
 
----
+The application combines an interactive 3D editor with project management, user authentication, database storage and automated code generation.
 
-## 2) Požiadavky na spustenie
+Users can:
 
-- Node.js **18+**
-- npm (alebo pnpm/yarn)
-- Supabase projekt (PostgreSQL)
+* create and manipulate 3D objects in an interactive scene
+* precisely define object position, size and rotation using X, Y and Z coordinates
+* construct microfluidic channel geometries visually
+* perform geometric operations on objects
+* import cell models
+* generate and distribute multiple embedded objects
+* save and manage projects
+* share projects with other users
+* use project templates
+* automatically generate Python simulation scripts
+* export designed scenes and generated simulation data
 
----
+The application is designed to reduce manual parameter configuration and make the preparation of microfluidic simulation models more accessible and less error-prone.
 
-## 3) Inštalácia projektu (dependencies)
+## Key Features
 
-1. Stiahni projekt (ZIP alebo git clone) a prejdi do priečinka:
+### Interactive 3D Editor
+
+The core of the application is an interactive 3D workspace built around **Three.js** and **React Three Fiber**.
+
+The editor provides:
+
+* real-time 3D visualization
+* camera navigation using OrbitControls
+* interactive spatial manipulation
+* object translation and rotation
+* precise numerical transformation parameters
+* object selection and property editing
+* object creation and management
+* geometric modeling operations
+
+The combination of direct manipulation and numerical input allows users to work intuitively while maintaining precise control over the resulting geometry.
+
+### Microfluidic Geometry Modeling
+
+The application allows users to construct complex microfluidic scenes from 3D objects.
+
+The implemented geometry-processing functionality includes operations such as:
+
+* Constructive Solid Geometry (CSG)
+* object clipping
+* object unions
+* edge beveling
+* spatial transformations
+
+These operations allow individual primitives to be combined into more complex channel structures.
+
+### Cell and Embedded Object Generation
+
+The application supports working with cells and other embedded objects inside the designed environment.
+
+Users can define parameters for multiple objects and generate their placement within a selected 3D region.
+
+Supported placement approaches include:
+
+* random distribution
+* structured distribution
+* parameterized bulk generation
+
+This functionality is intended for simulation scenarios involving multiple cells or other embedded objects.
+
+### Python Code Generation
+
+One of the main features of the application is automatic generation of Python simulation code.
+
+The application takes the designed 3D scene and converts its geometry and transformations into Python code intended for use with:
+
+* **ESPResSoMD**
+* **PyOIF**
+
+The code-generation process is handled through the application's API, allowing the browser-based editor to remain focused on interactive scene manipulation.
+
+This removes the need to manually define complex geometries and coordinates directly in simulation source code.
+
+### Project Management
+
+The application includes a project management system allowing users to:
+
+* create projects
+* save project states
+* manage their own projects
+* use project templates
+* access shared projects
+* explore publicly available projects
+
+### User Authentication and Security
+
+User authentication and project data are backed by **Supabase** and **PostgreSQL**.
+
+The application uses **Row-Level Security (RLS)** policies to control access to stored data and prevent users from modifying or deleting other users' project data.
+
+The system also includes functionality for:
+
+* user authentication
+* project ownership
+* project sharing
+* friend management
+* access control
+
+## Architecture
+
+The application is implemented as a full-stack web application.
+
+```text
+┌─────────────────────────────────────────────┐
+│                  Web Client                  │
+│                                             │
+│  Next.js + React + React Three Fiber        │
+│                  │                          │
+│                  ▼                          │
+│           Interactive 3D Editor             │
+│                  │                          │
+│                  ▼                          │
+│              Application API               │
+└──────────────────┬──────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────┐
+│                 Supabase                    │
+│                                             │
+│  Authentication │ PostgreSQL │ RLS          │
+└──────────────────┬──────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────┐
+│          Python Code Generation              │
+│                                             │
+│       ESPResSoMD / PyOIF Simulation         │
+└─────────────────────────────────────────────┘
+```
+
+The frontend is responsible for the interactive user interface and 3D scene manipulation. Project states, object properties and related data are stored in PostgreSQL through Supabase. The application also provides an API-based code-generation process for converting designed scenes into simulation scripts.
+
+## Technologies
+
+### Frontend
+
+* **TypeScript**
+* **React**
+* **Next.js**
+* **React Three Fiber (R3F)**
+* **Three.js**
+* **Tailwind CSS**
+* **WebGL**
+
+### Backend & Database
+
+* **Supabase**
+* **PostgreSQL**
+* **Row-Level Security (RLS)**
+* REST/API-based application services
+
+### Simulation & Code Generation
+
+* **Python**
+* **ESPResSoMD**
+* **PyOIF**
+
+### Development Tools
+
+* **Git**
+* **Visual Studio Code**
+
+## Database
+
+The application uses PostgreSQL as its persistent data layer through Supabase.
+
+The database stores information related to:
+
+* users
+* projects
+* 3D objects
+* project sharing
+* generated exports
+* application state
+
+Row-Level Security policies are used to enforce data access restrictions at the database level.
+
+## 3D Editor
+
+The 3D editor represents the main working environment of the application.
+
+Its implementation includes:
+
+* spatial navigation
+* object selection
+* object manipulation
+* transformation controls
+* object property editing
+* object parameter management
+* cell model import
+* simulation configuration
+* scene validation
+* scene export
+
+The editor combines interactive mouse-based manipulation with exact numerical input, allowing the user to switch between intuitive modeling and precise geometric definition.
+
+## Code Generation Workflow
+
+The general workflow is:
+
+```text
+Create / Edit 3D Scene
+          │
+          ▼
+Configure Object Parameters
+          │
+          ▼
+Validate Scene
+          │
+          ▼
+Send Scene Data to API
+          │
+          ▼
+Generate Python Simulation Code
+          │
+          ▼
+ESPResSoMD / PyOIF
+```
+
+The generated code represents the geometry and transformations defined by the user in the visual editor.
+
+## Testing
+
+The completed application was tested in several areas, including:
+
+* functional correctness
+* geometric accuracy
+* generated model correctness
+* usability
+* application performance
+
+The thesis also contains quantitative performance evaluation of the application and verification of generated geometries against specific simulation cases.
+
+## Screenshots
+
+Add screenshots of the application here.
+
+### 3D Editor
+
+![3D Editor](screenshots/editor.png)
+
+### Object Manipulation
+
+![Object Manipulation](screenshots/object-manipulation.png)
+
+### Generated Python Code
+
+![Generated Python Code](screenshots/generated-code.png)
+
+## Bachelor's Thesis
+
+This project was developed as part of my Bachelor's thesis:
+
+**Interactive 3D Application for Design and Code Generation of Microfluidic Channel Models**
+
+**Author:** Marcel Mikolášek
+**University:** University of Žilina
+**Faculty:** Faculty of Management Science and Informatics
+**Department:** Department of Software Technologies
+**Year:** 2026
+**Supervisor:** Ing. Michal Mulík, PhD.
+
+The thesis describes the analysis, architecture, implementation and testing of the application, including the 3D editor, database design, authentication, code-generation process and performance evaluation.
+
+**[📄 Read the full Bachelor's thesis](thesis/MarcelMikolasek_BakalarskaPraca_final.pdf)**
+
+## Project Structure
+
+The repository contains the source code of the web application, including the frontend, 3D editor, application logic and database-related functionality.
+
+The exact structure may change during further development.
+
+## Getting Started
+
+### Prerequisites
+
+* Node.js
+* npm
+* A configured Supabase project
+
+### Installation
+
 ```bash
-cd microfluidic-app
-Nainštaluj dependencies:
-
+git clone https://github.com/Marcelll1/microfluidic-3d-designer.git
+cd microfluidic-3d-designer
 npm install
+```
 
+### Environment Variables
 
-Spusti aplikáciu:
+Create a local environment configuration file:
 
+```text
+.env.local
+```
+
+Configure the environment variables required by the application.
+
+**Do not commit `.env.local` or any secret credentials to the repository.**
+
+### Development
+
+```bash
 npm run dev
+```
 
+The application will then be available through the local development server.
 
-Aplikácia beží na:
+## Author
 
-http://localhost:3000
-4) Nastavenie databázy (Supabase)
-4.1 Vytvor Supabase projekt
+**Marcel Mikolášek**
 
-V Supabase vytvor nový projekt (PostgreSQL DB).
+Computer Science Graduate & Software Developer
 
-V Settings → API si skopíruj:
+* GitHub: [github.com/Marcelll1](https://github.com/Marcelll1)
+* LinkedIn: [linkedin.com/in/marcel-mikolášek-a7096a333](https://www.linkedin.com/in/marcel-mikolášek-a7096a333/)
 
-Project URL
+## License
 
-anon public key
-
-4.2 Vytvor tabuľky v databáze
-
-V Supabase otvor SQL Editor a spusti SQL migráciu.
-
-Poznámka: názvy tabuliek a stĺpcov vychádzajú z DB schémy v projekte.
-
-Použi tento základný SQL setup (tabuľky, ktoré aplikácia používa):
-
--- USERS
-create table if not exists users (
-  id uuid primary key default gen_random_uuid(),
-  email text unique not null,
-  password_hash text not null,
-  role text not null default 'user',
-  created_at timestamptz not null default now(),
-  full_name text,
-  force_password_reset boolean not null default false
-);
-
--- PROJECTS
-create table if not exists projects (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  description text,
-  created_at timestamptz not null default now(),
-  owner_id uuid not null references users(id) on delete cascade
-);
-
--- OBJECTS (1:N project -> objects)
-create table if not exists object3d (
-  id uuid primary key default gen_random_uuid(),
-  type text not null,
-  pos_x float8 not null,
-  pos_y float8 not null,
-  pos_z float8 not null,
-  rotation_y float8 not null,
-  params jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  project_id uuid not null references projects(id) on delete cascade
-);
-
--- GENERATED ARTIFACTS
-create table if not exists generated_artifacts (
-  id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references projects(id) on delete cascade,
-  created_by uuid not null references users(id) on delete cascade,
-  kind text not null,
-  filename text not null,
-  content text not null,
-  created_at timestamptz not null default now()
-);
-
--- SESSIONS
-create table if not exists sessions (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id) on delete cascade,
-  token_hash text not null,
-  expires_at timestamptz not null,
-  revoked_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
--- PASSWORD RESET REQUESTS
-create table if not exists password_reset_requests (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id) on delete cascade,
-  status text not null default 'pending',
-  created_at timestamptz not null default now(),
-  approved_at timestamptz,
-  completed_at timestamptz,
-  approved_by uuid references users(id) on delete set null,
-  reset_code_hash text,
-  note text
-);
-
--- AUDIT LOG
-create table if not exists audit_log (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id) on delete cascade,
-  action text not null,
-  entity text not null,
-  entity_id uuid,
-  meta jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-4.3 Nastav environment premenné
-
-V root projekte vytvor súbor .env.local:
-
-SUPABASE_URL=PASTE_SUPABASE_PROJECT_URL
-SUPABASE_SERVICE_ROLE_KEY=PASTE_SUPABASE_SERVICE_ROLE_KEY
-
-
-.env.local sa nesmie commitovať (má byť v .gitignore).
-
-5) Prvé spustenie a test
-
-Spusť dev server:
-
-npm run dev
-
-
-Otvor:
-
-http://localhost:3000/register – vytvor účet
-
-http://localhost:3000/login – prihlásenie
-
-http://localhost:3000/projects – vytvor projekt
-
-otvor projekt → editor → pridaj objekt → posuň → vymaž → refresh (CRUD test)
-
-
-6) Build (produkčný build)
-npm run build
-npm run start
-
-7) Poznámky
-
-Pri práci s projektmi a objektami sú endpointy chránené kontrolou prihlásenia a autorizácie (owner/admin).
-
-Reset hesla funguje cez požiadavku na admina a následné nastavenie hesla pomocou kódu.
+This project was developed as a Bachelor's thesis at the University of Žilina.
