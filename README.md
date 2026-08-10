@@ -293,7 +293,7 @@ This project was developed as part of my Bachelor's thesis:
 
 The thesis describes the analysis, architecture, implementation and testing of the application, including the 3D editor, database design, authentication, code-generation process and performance evaluation.
 
-**[Read the full Bachelor's thesis](thesis/MarcelMikolasek_BakalarskaPraca_final.pdf)**
+**[Read the full Bachelor's thesis in Slovak language](thesis/MarcelMikolasek_BakalarskaPraca_final.pdf)**
 
 ## Getting Started
 
